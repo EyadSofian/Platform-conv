@@ -13,6 +13,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
+    "db:seed:users": "tsx prisma/seed-users.ts",
     "worker:campaign": "tsx workers/campaign-worker.ts"
   },
   "dependencies": {

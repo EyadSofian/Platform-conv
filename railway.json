@@ -4,7 +4,7 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "preDeployCommand": "npx prisma migrate deploy",
+    "preDeployCommand": "npx prisma migrate deploy && npm run db:seed:users",
     "startCommand": "npm run start",
     "healthcheckPath": "/api/health",
     "healthcheckTimeout": 120,
