@@ -1,0 +1,349 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Channel {
+  WHATSAPP  @map("whatsapp")
+  WEB       @map("web")
+  TELEGRAM  @map("telegram")
+  MESSENGER @map("messenger")
+}
+
+enum ContactStatus {
+  ACTIVE  @map("active")
+  CLOSED  @map("closed")
+  PENDING @map("pending")
+}
+
+enum ConversationStatus {
+  BOT    @map("bot")
+  HUMAN  @map("human")
+  CLOSED @map("closed")
+}
+
+enum MessageSender {
+  BOT      @map("bot")
+  AGENT    @map("agent")
+  CUSTOMER @map("customer")
+  SYSTEM   @map("system")
+}
+
+enum MessageType {
+  TEXT        @map("text")
+  IMAGE       @map("image")
+  FILE        @map("file")
+  NOTE        @map("note")
+  QUICK_REPLY @map("quick_reply")
+  BUTTONS     @map("buttons")
+}
+
+enum UserRole {
+  ADMIN       @map("admin")
+  SUPERVISOR  @map("supervisor")
+  SALES_AGENT @map("agent")
+  VIEWER      @map("viewer")
+}
+
+enum Availability {
+  ONLINE  @map("online")
+  BUSY    @map("busy")
+  AWAY    @map("away")
+  OFFLINE @map("offline")
+}
+
+enum CampaignType {
+  BLAST @map("blast")
+  DRIP  @map("drip")
+}
+
+enum CampaignStatus {
+  DRAFT     @map("draft")
+  SCHEDULED @map("scheduled")
+  RUNNING   @map("running")
+  COMPLETED @map("completed")
+  PAUSED    @map("paused")
+}
+
+enum WhatsAppTemplateCategory {
+  MARKETING      @map("marketing")
+  UTILITY        @map("utility")
+  AUTHENTICATION @map("authentication")
+}
+
+enum WhatsAppTemplateStatus {
+  APPROVED @map("approved")
+  PENDING  @map("pending")
+  REJECTED @map("rejected")
+  PAUSED   @map("paused")
+  DISABLED @map("disabled")
+}
+
+enum WhatsAppQualityRating {
+  HIGH    @map("high")
+  MEDIUM  @map("medium")
+  LOW     @map("low")
+  UNKNOWN @map("unknown")
+}
+
+enum NotificationType {
+  MESSAGE_ASSIGNED @map("message_assigned")
+  CUSTOMER_REPLIED @map("customer_replied")
+  HANDOFF_REQUEST  @map("handoff_request")
+  CAMPAIGN_UPDATE  @map("campaign_update")
+  FOLLOW_UP        @map("follow_up")
+}
+
+model User {
+  id             String       @id @default(cuid())
+  name           String?
+  email          String?      @unique
+  emailVerified  DateTime?
+  image          String?
+  password       String?
+  role           UserRole     @default(SALES_AGENT)
+  availability   Availability @default(OFFLINE)
+  lastAssignedAt DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  accounts              Account[]
+  sessions              Session[]
+  assignedContacts      Contact[]          @relation("AssignedContacts")
+  assignedConversations Conversation[]     @relation("AssignedConversations")
+  sentMessages          Message[]          @relation("AgentMessages")
+  campaigns             Campaign[]         @relation("CampaignCreator")
+  notifications         Notification[]     @relation("UserNotifications")
+  reminders             FollowUpReminder[]
+}
+
+model Contact {
+  id                  String        @id @default(cuid())
+  name                String?
+  phone               String?
+  email               String?
+  channel             Channel       @default(WEB)
+  botpressUserId      String?       @unique
+  botpressConvId      String?       @unique
+  status              ContactStatus @default(ACTIVE)
+  assignedAgentId     String?
+  tags                String[]      @default([])
+  whatsappOptIn       Boolean       @default(false)
+  whatsappOptInAt     DateTime?
+  whatsappOptInSource String?
+  marketingPaused     Boolean       @default(false)
+  odooPartnerId       Int?
+  odooLeadId          Int?
+  metadata            Json?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  messages           Message[]
+  conversation       Conversation?
+  campaignRecipients CampaignRecipient[]
+  reminders          FollowUpReminder[]
+  assignedAgent      User?               @relation("AssignedContacts", fields: [assignedAgentId], references: [id], onDelete: SetNull)
+
+  @@index([channel])
+  @@index([status])
+  @@index([assignedAgentId])
+  @@index([whatsappOptIn])
+  @@index([odooPartnerId])
+  @@index([odooLeadId])
+  @@index([createdAt])
+}
+
+model Message {
+  id                String        @id @default(cuid())
+  contactId         String
+  content           String
+  type              MessageType   @default(TEXT)
+  sender            MessageSender
+  senderId          String?
+  isNote            Boolean       @default(false)
+  metadata          Json?
+  botpressMessageId String?       @unique
+  createdAt         DateTime      @default(now())
+
+  contact     Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  senderAgent User?   @relation("AgentMessages", fields: [senderId], references: [id], onDelete: SetNull)
+
+  @@index([contactId, createdAt])
+  @@index([sender])
+}
+
+model Conversation {
+  id              String             @id @default(cuid())
+  contactId       String             @unique
+  status          ConversationStatus @default(BOT)
+  assignedAgentId String?
+  lastMessageAt   DateTime?
+  unreadCount     Int                @default(0)
+  closedAt        DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  contact       Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  assignedAgent User?   @relation("AssignedConversations", fields: [assignedAgentId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([assignedAgentId])
+  @@index([lastMessageAt])
+}
+
+model Campaign {
+  id                 String         @id @default(cuid())
+  name               String
+  message            String
+  type               CampaignType
+  status             CampaignStatus @default(DRAFT)
+  targetRules        Json
+  channel            Channel        @default(WHATSAPP)
+  templateName       String?
+  templateLanguage   String?        @default("en_US")
+  respectOptIn       Boolean        @default(true)
+  rateLimitPerMinute Int            @default(30)
+  quietHoursStart    String?        @default("21:00")
+  quietHoursEnd      String?        @default("09:00")
+  timezone           String?        @default("Africa/Cairo")
+  scheduledAt        DateTime?
+  sentCount          Int            @default(0)
+  deliveredCount     Int            @default(0)
+  repliedCount       Int            @default(0)
+  convertedCount     Int            @default(0)
+  createdById        String
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  createdBy  User                @relation("CampaignCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  recipients CampaignRecipient[]
+
+  @@index([status])
+  @@index([channel])
+  @@index([templateName])
+  @@index([scheduledAt])
+}
+
+model CampaignRecipient {
+  id          String    @id @default(cuid())
+  campaignId  String
+  contactId   String
+  status      String    @default("queued")
+  skipReason  String?
+  sentAt      DateTime?
+  deliveredAt DateTime?
+  repliedAt   DateTime?
+  convertedAt DateTime?
+  metadata    Json?
+  createdAt   DateTime  @default(now())
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact  Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, contactId])
+  @@index([status])
+}
+
+model WhatsAppTemplate {
+  id              String                   @id @default(cuid())
+  name            String
+  language        String                   @default("en_US")
+  category        WhatsAppTemplateCategory
+  status          WhatsAppTemplateStatus   @default(PENDING)
+  qualityRating   WhatsAppQualityRating    @default(UNKNOWN)
+  components      Json?
+  rejectionReason String?
+  lastSyncedAt    DateTime?
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+
+  @@unique([name, language])
+  @@index([status])
+  @@index([qualityRating])
+}
+
+model OdooSyncLog {
+  id        String   @id @default(cuid())
+  model     String
+  recordId  Int?
+  operation String
+  status    String   @default("success")
+  payload   Json?
+  error     String?
+  createdAt DateTime @default(now())
+
+  @@index([model, recordId])
+  @@index([status])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  body      String
+  readAt    DateTime?
+  metadata  Json?
+  createdAt DateTime         @default(now())
+
+  user User @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+}
+
+model FollowUpReminder {
+  id        String   @id @default(cuid())
+  userId    String
+  contactId String
+  dueAt     DateTime
+  note      String
+  status    String   @default("scheduled")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([userId, dueAt])
+  @@index([contactId])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}

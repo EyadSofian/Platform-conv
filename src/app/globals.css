@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 210 20% 98%;
+  --foreground: 217 28% 12%;
+  --card: 0 0% 100%;
+  --card-foreground: 217 28% 12%;
+  --muted: 210 18% 93%;
+  --muted-foreground: 217 10% 43%;
+  --border: 214 16% 86%;
+  --input: 214 16% 86%;
+  --ring: 181 70% 34%;
+  --primary: 217 31% 17%;
+  --primary-foreground: 0 0% 100%;
+  --accent: 181 70% 34%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 153 60% 39%;
+  --warning: 34 92% 50%;
+}
+
+body {
+  color: hsl(var(--foreground));
+  background: hsl(var(--background));
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}

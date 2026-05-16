@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(node_modules/.bin/tsc --noEmit)",
+      "PowerShell(./node_modules/.bin/tsc --noEmit 2>&1)",
+      "PowerShell(npm install --no-audit --no-fund --prefer-offline 2>&1)",
+      "PowerShell(npx prisma generate 2>&1)",
+      "PowerShell(npx tsc --noEmit 2>&1)",
+      "PowerShell(npx tsc --noEmit; Write-Host \"EXIT=$LASTEXITCODE\")",
+      "PowerShell(npm run lint 2>&1 | Select-Object -Last 80; Write-Host \"EXIT=$LASTEXITCODE\")",
+      "PowerShell(npx tsc --noEmit; Write-Host \"TSC=$LASTEXITCODE\")",
+      "PowerShell(npm run lint 2>&1 | Select-Object -Last 30; Write-Host \"LINT=$LASTEXITCODE\")",
+      "PowerShell(npx tsc --noEmit; Write-Host \"TSC=$LASTEXITCODE\"; npm run lint 2>&1 | Select-Object -Last 10; Write-Host \"LINT=$LASTEXITCODE\")",
+      "PowerShell(npx tsc --noEmit; Write-Host \"TSC=$LASTEXITCODE\"; npm run lint 2>&1 | Select-Object -Last 12; Write-Host \"LINT=$LASTEXITCODE\")",
+      "PowerShell(Get-ChildItem -Force . | Where-Object { $_.Name -eq '.git' } | Select-Object Name, Mode, Length; Write-Host '---'; if \\(Test-Path .git\\) { Get-ChildItem -Force .git | Select-Object Name, Mode | Format-Table -AutoSize | Out-String -Stream | Select-Object -First 30 } else { Write-Host 'no .git here' })",
+      "Bash(gh --version)",
+      "Bash(gh auth *)",
+      "PowerShell(try { $v = gh --version 2>&1; Write-Host \"GH=$v\" } catch { Write-Host 'gh not installed' }; Write-Host '---'; try { git --version } catch { Write-Host 'git not installed' }; Write-Host '---'; git config --global credential.helper 2>&1)",
+      "Bash(git --version)",
+      "Bash(git config *)",
+      "Bash(git init *)",
+      "Bash(git remote *)",
+      "Bash(git add *)"
+    ]
+  }
+}
