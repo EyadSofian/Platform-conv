@@ -6,6 +6,7 @@ import {
 } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { emitRealtime } from "../lib/realtime";
+import { runAutomations } from "./automation-service";
 import { recordMessage } from "./conversation-service";
 import type {
   NormalizedMessageEvent,
@@ -83,6 +84,14 @@ export async function ingestInboundMessage(params: {
 
   const contact = await resolveContact(organizationId, channel, event);
 
+  // Detect whether this is the first message of a brand-new conversation so
+  // automation rules can fire the NEW_CONVERSATION trigger.
+  const existingConversation = await prisma.conversation.findUnique({
+    where: { contactId: contact.id },
+    select: { id: true },
+  });
+  const isNewConversation = !existingConversation;
+
   const content =
     event.text ??
     (event.media ? `[${event.media.kind}]${event.media.caption ? ` ${event.media.caption}` : ""}` : "");
@@ -113,6 +122,26 @@ export async function ingestInboundMessage(params: {
       },
     });
   }
+
+  await trackCampaignReply(contact.id);
+
+  // Run automation rules (NEW_CONVERSATION first, then per-message triggers).
+  if (isNewConversation) {
+    await runAutomations({
+      organizationId,
+      event: "new_conversation",
+      contact,
+      conversation,
+      message,
+    });
+  }
+  await runAutomations({
+    organizationId,
+    event: "new_message",
+    contact,
+    conversation,
+    message,
+  });
 
   return { duplicate: false, contact, message, conversation };
 }
@@ -162,5 +191,72 @@ export async function applyMessageStatus(params: {
     payload: { id: updated.id, status: updated.status, _statusUpdate: true },
   });
 
+  // Mirror the status onto a matching campaign recipient + campaign counters.
+  await applyCampaignRecipientStatus(event);
+
   return { matched: true, messageId: updated.id, status };
+}
+
+/**
+ * When a contact replies, mark their most recent un-replied campaign send as
+ * replied and bump the campaign's reply counter (attribution heuristic).
+ */
+async function trackCampaignReply(contactId: string) {
+  const recipient = await prisma.campaignRecipient.findFirst({
+    where: {
+      contactId,
+      repliedAt: null,
+      status: { in: ["sent", "delivered", "read"] },
+    },
+    orderBy: { sentAt: "desc" },
+    select: { id: true, campaignId: true },
+  });
+  if (!recipient) return;
+
+  await prisma.campaignRecipient.update({
+    where: { id: recipient.id },
+    data: { repliedAt: new Date() },
+  });
+  await prisma.campaign.update({
+    where: { id: recipient.campaignId },
+    data: { repliedCount: { increment: 1 } },
+  });
+}
+
+async function applyCampaignRecipientStatus(event: NormalizedStatusEvent) {
+  const recipient = await prisma.campaignRecipient.findFirst({
+    where: { externalId: event.externalId },
+    select: { id: true, campaignId: true, status: true },
+  });
+  if (!recipient) return;
+
+  const now = event.timestamp ?? new Date();
+  if (event.status === "delivered" && recipient.status !== "read") {
+    await prisma.campaignRecipient.update({
+      where: { id: recipient.id },
+      data: { status: "delivered", deliveredAt: now },
+    });
+    await prisma.campaign.update({
+      where: { id: recipient.campaignId },
+      data: { deliveredCount: { increment: 1 } },
+    });
+  } else if (event.status === "read") {
+    await prisma.campaignRecipient.update({
+      where: { id: recipient.id },
+      data: { status: "read", readAt: now },
+    });
+    await prisma.campaign.update({
+      where: { id: recipient.campaignId },
+      data: { readCount: { increment: 1 } },
+    });
+  } else if (event.status === "failed") {
+    await prisma.campaignRecipient.update({
+      where: { id: recipient.id },
+      data: { status: "failed", failedReason: event.errorReason ?? "failed" },
+    });
+    await prisma.campaign.update({
+      where: { id: recipient.campaignId },
+      data: { failedCount: { increment: 1 } },
+    });
+  }
 }

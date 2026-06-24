@@ -64,3 +64,37 @@ nullable), so it applies over existing data without a backfill step.
 `POST /api/conversations/:id/notes` creates one and emits a `note.created`
 realtime event; the inbox renders notes inline, visually distinct from customer
 and agent messages, and never sends them to the customer.
+
+## Templates, campaigns & automation (Sprint 2)
+
+### Message templates
+- `WhatsAppTemplate` is org-scoped. CRUD at `/api/whatsapp/templates`
+  (`?sync=1` pulls from the WhatsApp Cloud API when credentials exist),
+  `/api/whatsapp/templates/:id` (GET/PATCH/DELETE), and
+  `/api/whatsapp/templates/:id/preview` (renders the body with sample
+  variables). `extractTemplateVariables` / `renderTemplatePreview` live in
+  `src/lib/whatsapp.ts`.
+
+### WhatsApp campaigns
+- `validateCampaignRecipients` (`POST /api/campaigns/:id/validate`) is a dry run
+  reporting eligible vs skipped contacts and the reason per skip
+  (`missing_phone`, `missing_whatsapp_opt_in`, `unsubscribed`,
+  `marketing_paused`, …).
+- `sendCampaignNow` sends WhatsApp campaigns as **approved templates** through
+  the Cloud adapter (free-form marketing is never sent), respecting opt-in /
+  `marketingPaused` / `unsubscribed`, quiet hours (timezone-aware, can wrap past
+  midnight), and the per-minute rate limit. Non-WhatsApp campaigns keep the
+  BotPress path.
+- Per-recipient status (`queued/sent/delivered/read/failed/replied`) and the
+  campaign counters are updated as WhatsApp delivery/read/failed webhooks arrive
+  (matched on the stored message id) and when a contact replies.
+
+### Automation rules
+- `AutomationRule` (org-scoped) pairs a trigger with an action. The engine
+  (`runAutomations`) runs on inbound ingest for `NEW_CONVERSATION`,
+  `NEW_MESSAGE`, `MESSAGE_KEYWORD`, and `CHANNEL_IS` triggers; actions
+  `ADD_TAG`, `ASSIGN_AGENT`, `NOTIFY`, `CLOSE`, `SNOOZE`, and `SEND_WEBHOOK` are
+  implemented (others are scaffolded). Rules are managed at
+  `/api/automation-rules` (+ `/:id`) and the **Settings → Automation** page;
+  editing requires ADMIN/SUPERVISOR. Failures are isolated per rule so a bad
+  rule never blocks ingestion.

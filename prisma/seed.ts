@@ -1,5 +1,7 @@
 import { hash } from "bcryptjs";
 import {
+  AutomationActionType,
+  AutomationTriggerType,
   Availability,
   CampaignStatus,
   CampaignType,
@@ -179,6 +181,23 @@ async function main() {
         body: "عندنا باقة واتساب جديدة لفرق البيع. تحب تشوف ديمو سريع؟",
       },
       lastSyncedAt: new Date(),
+    },
+  });
+
+  // Example automation: tag conversations that mention pricing.
+  await prisma.automationRule.upsert({
+    where: { id: "demo-rule-pricing" },
+    update: {},
+    create: {
+      id: "demo-rule-pricing",
+      organizationId: organization.id,
+      name: "Tag pricing questions",
+      enabled: true,
+      priority: 10,
+      trigger: AutomationTriggerType.MESSAGE_KEYWORD,
+      triggerConfig: { keywords: ["price", "pricing", "cost", "سعر"] },
+      action: AutomationActionType.ADD_TAG,
+      actionConfig: { tag: "pricing" },
     },
   });
 }

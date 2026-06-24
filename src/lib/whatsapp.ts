@@ -46,11 +46,68 @@ export function assertMarketingEligible(input: {
   phone?: string | null;
   whatsappOptIn: boolean;
   marketingPaused: boolean;
+  unsubscribed?: boolean;
 }) {
   if (!input.phone) return "missing_phone";
   if (!input.whatsappOptIn) return "missing_whatsapp_opt_in";
+  if (input.unsubscribed) return "unsubscribed";
   if (input.marketingPaused) return "marketing_paused";
   return null;
+}
+
+/**
+ * Extracts the ordered, de-duplicated `{{n}}` placeholders from a template's
+ * body component so the UI can preview and campaigns can map variables.
+ */
+export function extractTemplateVariables(components: unknown): string[] {
+  const found = new Set<string>();
+  const visit = (value: unknown) => {
+    if (typeof value === "string") {
+      for (const match of Array.from(value.matchAll(/\{\{\s*(\w+)\s*\}\}/g))) {
+        found.add(match[1]);
+      }
+    } else if (Array.isArray(value)) {
+      value.forEach(visit);
+    } else if (value && typeof value === "object") {
+      Object.values(value as Record<string, unknown>).forEach(visit);
+    }
+  };
+  visit(components);
+  // Sort numeric placeholders ({{1}},{{2}}) numerically, named ones alphabetically.
+  return Array.from(found).sort((a, b) => {
+    const na = Number(a);
+    const nb = Number(b);
+    if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
+    return a.localeCompare(b);
+  });
+}
+
+/** Renders a template body with sample variables for preview. */
+export function renderTemplatePreview(
+  components: unknown,
+  variables: Record<string, string>,
+): string {
+  const body = extractTemplateBody(components);
+  return body.replace(/\{\{\s*(\w+)\s*\}\}/g, (_match, key: string) =>
+    variables[key] !== undefined ? variables[key] : `{{${key}}}`,
+  );
+}
+
+function extractTemplateBody(components: unknown): string {
+  if (typeof components === "string") return components;
+  if (components && typeof components === "object") {
+    const record = components as Record<string, unknown>;
+    if (typeof record.body === "string") return record.body;
+    if (Array.isArray(components)) {
+      const bodyComponent = (components as Record<string, unknown>[]).find(
+        (c) => String(c.type).toUpperCase() === "BODY",
+      );
+      if (bodyComponent && typeof bodyComponent.text === "string") {
+        return bodyComponent.text;
+      }
+    }
+  }
+  return "";
 }
 
 export async function getApprovedTemplate(name?: string | null, language?: string | null) {

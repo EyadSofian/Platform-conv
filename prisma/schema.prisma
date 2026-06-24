@@ -133,6 +133,28 @@ enum NotificationType {
   FOLLOW_UP        @map("follow_up")
 }
 
+enum AutomationTriggerType {
+  NEW_CONVERSATION      @map("new_conversation")
+  NEW_MESSAGE           @map("new_message")
+  MESSAGE_KEYWORD       @map("message_keyword")
+  CHANNEL_IS            @map("channel_is")
+  TAG_ADDED             @map("tag_added")
+  OUTSIDE_BUSINESS_HOURS @map("outside_business_hours")
+  NO_REPLY_AFTER        @map("no_reply_after")
+}
+
+enum AutomationActionType {
+  ASSIGN_AGENT     @map("assign_agent")
+  ADD_TAG          @map("add_tag")
+  SEND_TEMPLATE    @map("send_template")
+  SEND_WEBHOOK     @map("send_webhook")
+  CREATE_LEAD      @map("create_lead")
+  NOTIFY           @map("notify")
+  HANDOFF_BOTPRESS @map("handoff_botpress")
+  CLOSE            @map("close")
+  SNOOZE           @map("snooze")
+}
+
 // ---------------------------------------------------------------------------
 // Multi-tenancy
 // ---------------------------------------------------------------------------
@@ -153,6 +175,7 @@ model Organization {
   campaigns      Campaign[]
   templates      WhatsAppTemplate[]
   webhookEvents  WebhookEvent[]
+  automationRules AutomationRule[]
 }
 
 model OrganizationMember {
@@ -234,6 +257,29 @@ model WebhookEvent {
   @@unique([source, externalId])
   @@index([organizationId, createdAt])
   @@index([status])
+}
+
+model AutomationRule {
+  id             String                @id @default(cuid())
+  organizationId String
+  name           String
+  enabled        Boolean               @default(true)
+  priority       Int                   @default(0)
+  trigger        AutomationTriggerType
+  // Trigger parameters, e.g. { "keywords": ["refund"], "channel": "WHATSAPP" }.
+  triggerConfig  Json?
+  action         AutomationActionType
+  // Action parameters, e.g. { "tag": "vip" } or { "agentId": "..." }.
+  actionConfig   Json?
+  lastRunAt      DateTime?
+  runCount       Int                   @default(0)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, enabled])
+  @@index([trigger])
 }
 
 model User {
@@ -380,9 +426,13 @@ model Campaign {
   quietHoursEnd      String?        @default("09:00")
   timezone           String?        @default("Africa/Cairo")
   scheduledAt        DateTime?
+  queuedCount        Int            @default(0)
   sentCount          Int            @default(0)
   deliveredCount     Int            @default(0)
+  readCount          Int            @default(0)
   repliedCount       Int            @default(0)
+  failedCount        Int            @default(0)
+  skippedCount       Int            @default(0)
   convertedCount     Int            @default(0)
   createdById        String
   createdAt          DateTime       @default(now())
@@ -400,23 +450,27 @@ model Campaign {
 }
 
 model CampaignRecipient {
-  id          String    @id @default(cuid())
-  campaignId  String
-  contactId   String
-  status      String    @default("queued")
-  skipReason  String?
-  sentAt      DateTime?
-  deliveredAt DateTime?
-  repliedAt   DateTime?
-  convertedAt DateTime?
-  metadata    Json?
-  createdAt   DateTime  @default(now())
+  id           String    @id @default(cuid())
+  campaignId   String
+  contactId    String
+  status       String    @default("queued")
+  skipReason   String?
+  externalId   String?
+  failedReason String?
+  sentAt       DateTime?
+  deliveredAt  DateTime?
+  readAt       DateTime?
+  repliedAt    DateTime?
+  convertedAt  DateTime?
+  metadata     Json?
+  createdAt    DateTime  @default(now())
 
   campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   contact  Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
   @@unique([campaignId, contactId])
   @@index([status])
+  @@index([externalId])
 }
 
 model WhatsAppTemplate {

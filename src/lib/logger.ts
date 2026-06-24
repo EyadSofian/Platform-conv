@@ -56,6 +56,9 @@ export type AuditEvent =
   | "conversation.note"
   | "whatsapp.inbound"
   | "whatsapp.status"
+  | "automation.rule.create"
+  | "automation.rule.update"
+  | "automation.rule.delete"
   | "message.sent"
   | "botpress.test"
   | "user.signin";

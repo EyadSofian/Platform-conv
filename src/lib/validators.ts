@@ -106,8 +106,81 @@ export const campaignCreateSchema = z.object({
   quietHoursEnd: z.string().regex(/^\d{2}:\d{2}$/).default("09:00"),
   timezone: z.string().default("Africa/Cairo"),
   scheduledAt: z.string().datetime().optional().nullable(),
-  createdById: z.string().min(1),
+  // Derived from the session when omitted.
+  createdById: z.string().optional().default(""),
 });
+
+export const templateCategorySchema = z.preprocess(
+  upper,
+  z.enum(["MARKETING", "UTILITY", "AUTHENTICATION"]),
+);
+
+export const templateStatusSchema = z.preprocess(
+  upper,
+  z.enum(["APPROVED", "PENDING", "REJECTED", "PAUSED", "DISABLED"]),
+);
+
+export const templateCreateSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .regex(/^[a-z0-9_]+$/, "Use lowercase letters, numbers and underscores."),
+  language: z.string().trim().min(2).default("en_US"),
+  category: templateCategorySchema.default("MARKETING"),
+  status: templateStatusSchema.default("PENDING"),
+  components: z.unknown().optional(),
+});
+
+export const templateUpdateSchema = z.object({
+  category: templateCategorySchema.optional(),
+  status: templateStatusSchema.optional(),
+  components: z.unknown().optional(),
+});
+
+export const templatePreviewSchema = z.object({
+  variables: z.record(z.string(), z.string()).default({}),
+});
+
+export const automationTriggerSchema = z.preprocess(
+  upper,
+  z.enum([
+    "NEW_CONVERSATION",
+    "NEW_MESSAGE",
+    "MESSAGE_KEYWORD",
+    "CHANNEL_IS",
+    "TAG_ADDED",
+    "OUTSIDE_BUSINESS_HOURS",
+    "NO_REPLY_AFTER",
+  ]),
+);
+
+export const automationActionSchema = z.preprocess(
+  upper,
+  z.enum([
+    "ASSIGN_AGENT",
+    "ADD_TAG",
+    "SEND_TEMPLATE",
+    "SEND_WEBHOOK",
+    "CREATE_LEAD",
+    "NOTIFY",
+    "HANDOFF_BOTPRESS",
+    "CLOSE",
+    "SNOOZE",
+  ]),
+);
+
+export const automationRuleCreateSchema = z.object({
+  name: z.string().trim().min(1),
+  enabled: z.boolean().default(true),
+  priority: z.number().int().min(0).max(1000).default(0),
+  trigger: automationTriggerSchema,
+  triggerConfig: z.record(z.string(), z.unknown()).optional(),
+  action: automationActionSchema,
+  actionConfig: z.record(z.string(), z.unknown()).optional(),
+});
+
+export const automationRuleUpdateSchema = automationRuleCreateSchema.partial();
 
 export const botpressWebhookSchema = z.object({
   event: z.string().optional(),

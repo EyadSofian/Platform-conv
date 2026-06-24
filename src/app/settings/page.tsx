@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Bot, PlugZap, Shield, UsersRound } from "lucide-react";
+import { Bot, PlugZap, Shield, UsersRound, Workflow } from "lucide-react";
 import { Panel, PanelBody } from "@/components/ui/panel";
 
 const settings = [
@@ -8,6 +8,12 @@ const settings = [
     title: "Agents",
     body: "Roles, availability, and routing capacity",
     icon: UsersRound,
+  },
+  {
+    href: "/settings/automation",
+    title: "Automation",
+    body: "Rules that assign, tag, and route conversations automatically",
+    icon: Workflow,
   },
   {
     href: "/settings/integrations",
