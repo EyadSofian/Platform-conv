@@ -27,6 +27,11 @@ export type RealtimeEvent =
       payload: MessageWithContact | Record<string, unknown>;
     }
   | {
+      type: "note.created";
+      room?: string;
+      payload: Record<string, unknown>;
+    }
+  | {
       type: "notification.created";
       room?: string;
       payload: Record<string, unknown>;

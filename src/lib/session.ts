@@ -29,6 +29,28 @@ export function userHasRole(
   return roles.includes(user.role);
 }
 
+/**
+ * Returns the active organization id for the current request, or null when the
+ * user has not been attached to a workspace yet. API handlers should scope
+ * every query by this value once the multi-tenant backfill has run.
+ */
+export async function getActiveOrganizationId(): Promise<string | null> {
+  const user = await getCurrentUser();
+  return user?.organizationId ?? null;
+}
+
+export async function requireOrganization(): Promise<{
+  user: SessionUser;
+  organizationId: string;
+}> {
+  const user = await requireUser();
+  const organizationId = user.organizationId;
+  if (!organizationId) {
+    throw new ForbiddenError("No active workspace for this account.");
+  }
+  return { user, organizationId };
+}
+
 export class RequireSessionError extends Error {
   status = 401;
   constructor() {

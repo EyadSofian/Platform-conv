@@ -14,6 +14,41 @@ enum Channel {
   MESSENGER @map("messenger")
 }
 
+// Broader channel taxonomy used by the channel-adapter architecture.
+// `Channel` is kept for backward compatibility on Contact; `ChannelType`
+// is the platform-owned identity for connected channel accounts.
+enum ChannelType {
+  WHATSAPP_CLOUD     @map("whatsapp_cloud")
+  FACEBOOK_MESSENGER @map("facebook_messenger")
+  INSTAGRAM          @map("instagram")
+  WEBCHAT            @map("webchat")
+  TELEGRAM           @map("telegram")
+  BOTPRESS           @map("botpress")
+}
+
+enum OrgRole {
+  OWNER      @map("owner")
+  ADMIN      @map("admin")
+  SUPERVISOR @map("supervisor")
+  AGENT      @map("agent")
+}
+
+enum ChannelHealthStatus {
+  CONNECTED       @map("connected")
+  TOKEN_INVALID   @map("token_invalid")
+  WEBHOOK_FAILING @map("webhook_failing")
+  MISSING_CONFIG  @map("missing_config")
+  DISCONNECTED    @map("disconnected")
+}
+
+enum MessageStatus {
+  PENDING   @map("pending")
+  SENT      @map("sent")
+  DELIVERED @map("delivered")
+  READ      @map("read")
+  FAILED    @map("failed")
+}
+
 enum ContactStatus {
   ACTIVE  @map("active")
   CLOSED  @map("closed")
@@ -98,6 +133,109 @@ enum NotificationType {
   FOLLOW_UP        @map("follow_up")
 }
 
+// ---------------------------------------------------------------------------
+// Multi-tenancy
+// ---------------------------------------------------------------------------
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members        OrganizationMember[]
+  channelAccounts ChannelAccount[]
+  contacts       Contact[]
+  conversations  Conversation[]
+  messages       Message[]
+  notes          ConversationNote[]
+  campaigns      Campaign[]
+  templates      WhatsAppTemplate[]
+  webhookEvents  WebhookEvent[]
+}
+
+model OrganizationMember {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  role           OrgRole  @default(AGENT)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+}
+
+model ChannelAccount {
+  id                 String              @id @default(cuid())
+  organizationId     String
+  type               ChannelType
+  name               String
+  status             ChannelHealthStatus @default(MISSING_CONFIG)
+  // Provider identifiers (e.g. WhatsApp phone number id / WABA id, page id).
+  externalId         String?
+  phoneNumberId      String?
+  businessAccountId  String?
+  // Non-secret configuration. Secrets (tokens) live in `credentials` and must
+  // never be returned to client components.
+  config             Json?
+  credentials        Json?
+  webhookVerifyToken String?
+  lastWebhookAt      DateTime?
+  lastErrorAt        DateTime?
+  lastError          String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  conversations Conversation[]
+  messages      Message[]
+
+  @@index([organizationId, type])
+  @@index([status])
+}
+
+model ConversationNote {
+  id             String   @id @default(cuid())
+  organizationId String
+  conversationId String
+  authorId       String?
+  body           String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  author       User?        @relation("AuthoredNotes", fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([conversationId, createdAt])
+  @@index([organizationId])
+}
+
+// Raw inbound webhook payloads stored for debugging + idempotency.
+model WebhookEvent {
+  id               String      @id @default(cuid())
+  organizationId   String?
+  channelAccountId String?
+  source           ChannelType
+  eventType        String?
+  externalId       String?
+  status           String      @default("received")
+  payload          Json
+  error            String?
+  createdAt        DateTime    @default(now())
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@unique([source, externalId])
+  @@index([organizationId, createdAt])
+  @@index([status])
+}
+
 model User {
   id             String       @id @default(cuid())
   name           String?
@@ -113,41 +251,52 @@ model User {
 
   accounts              Account[]
   sessions              Session[]
+  memberships           OrganizationMember[]
   assignedContacts      Contact[]          @relation("AssignedContacts")
   assignedConversations Conversation[]     @relation("AssignedConversations")
   sentMessages          Message[]          @relation("AgentMessages")
+  authoredNotes         ConversationNote[] @relation("AuthoredNotes")
   campaigns             Campaign[]         @relation("CampaignCreator")
   notifications         Notification[]     @relation("UserNotifications")
   reminders             FollowUpReminder[]
 }
 
 model Contact {
-  id                  String        @id @default(cuid())
-  name                String?
-  phone               String?
-  email               String?
-  channel             Channel       @default(WEB)
-  botpressUserId      String?       @unique
-  botpressConvId      String?       @unique
-  status              ContactStatus @default(ACTIVE)
-  assignedAgentId     String?
-  tags                String[]      @default([])
-  whatsappOptIn       Boolean       @default(false)
-  whatsappOptInAt     DateTime?
-  whatsappOptInSource String?
-  marketingPaused     Boolean       @default(false)
-  odooPartnerId       Int?
-  odooLeadId          Int?
-  metadata            Json?
-  createdAt           DateTime      @default(now())
-  updatedAt           DateTime      @updatedAt
+  id                    String        @id @default(cuid())
+  organizationId        String?
+  name                  String?
+  phone                 String?
+  email                 String?
+  channel               Channel       @default(WEB)
+  botpressUserId        String?       @unique
+  botpressConvId        String?       @unique
+  status                ContactStatus @default(ACTIVE)
+  assignedAgentId       String?
+  tags                  String[]      @default([])
+  customFields          Json?
+  whatsappOptIn         Boolean       @default(false)
+  whatsappOptInAt       DateTime?
+  whatsappOptInSource   String?
+  whatsappOptInEvidence Json?
+  marketingPaused       Boolean       @default(false)
+  unsubscribed          Boolean       @default(false)
+  unsubscribedAt        DateTime?
+  odooPartnerId         Int?
+  odooLeadId            Int?
+  metadata              Json?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
 
+  organization       Organization?       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   messages           Message[]
   conversation       Conversation?
   campaignRecipients CampaignRecipient[]
   reminders          FollowUpReminder[]
   assignedAgent      User?               @relation("AssignedContacts", fields: [assignedAgentId], references: [id], onDelete: SetNull)
 
+  @@index([organizationId])
+  @@index([organizationId, phone])
+  @@index([organizationId, email])
   @@index([channel])
   @@index([status])
   @@index([assignedAgentId])
@@ -158,38 +307,57 @@ model Contact {
 }
 
 model Message {
-  id                String        @id @default(cuid())
+  id                String         @id @default(cuid())
+  organizationId    String?
+  channelAccountId  String?
   contactId         String
   content           String
-  type              MessageType   @default(TEXT)
+  type              MessageType    @default(TEXT)
   sender            MessageSender
   senderId          String?
-  isNote            Boolean       @default(false)
+  isNote            Boolean        @default(false)
+  status            MessageStatus?
+  externalId        String?
+  deliveredAt       DateTime?
+  readAt            DateTime?
+  failedReason      String?
   metadata          Json?
-  botpressMessageId String?       @unique
-  createdAt         DateTime      @default(now())
+  botpressMessageId String?        @unique
+  createdAt         DateTime       @default(now())
 
-  contact     Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  senderAgent User?   @relation("AgentMessages", fields: [senderId], references: [id], onDelete: SetNull)
+  organization   Organization?   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  channelAccount ChannelAccount? @relation(fields: [channelAccountId], references: [id], onDelete: SetNull)
+  contact        Contact         @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  senderAgent    User?           @relation("AgentMessages", fields: [senderId], references: [id], onDelete: SetNull)
 
+  @@unique([channelAccountId, externalId])
   @@index([contactId, createdAt])
+  @@index([organizationId, createdAt])
   @@index([sender])
 }
 
 model Conversation {
-  id              String             @id @default(cuid())
-  contactId       String             @unique
-  status          ConversationStatus @default(BOT)
-  assignedAgentId String?
-  lastMessageAt   DateTime?
-  unreadCount     Int                @default(0)
-  closedAt        DateTime?
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
+  id                    String             @id @default(cuid())
+  organizationId        String?
+  channelAccountId      String?
+  contactId             String             @unique
+  status                ConversationStatus @default(BOT)
+  assignedAgentId       String?
+  lastMessageAt         DateTime?
+  lastCustomerMessageAt DateTime?
+  snoozedUntil          DateTime?
+  unreadCount           Int                @default(0)
+  closedAt              DateTime?
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
 
-  contact       Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  assignedAgent User?   @relation("AssignedConversations", fields: [assignedAgentId], references: [id], onDelete: SetNull)
+  organization   Organization?      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  channelAccount ChannelAccount?    @relation(fields: [channelAccountId], references: [id], onDelete: SetNull)
+  contact        Contact            @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  assignedAgent  User?              @relation("AssignedConversations", fields: [assignedAgentId], references: [id], onDelete: SetNull)
+  notes          ConversationNote[]
 
+  @@index([organizationId, status])
   @@index([status])
   @@index([assignedAgentId])
   @@index([lastMessageAt])
@@ -197,6 +365,7 @@ model Conversation {
 
 model Campaign {
   id                 String         @id @default(cuid())
+  organizationId     String?
   name               String
   message            String
   type               CampaignType
@@ -219,9 +388,11 @@ model Campaign {
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt
 
-  createdBy  User                @relation("CampaignCreator", fields: [createdById], references: [id], onDelete: Restrict)
-  recipients CampaignRecipient[]
+  organization Organization?       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User                @relation("CampaignCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  recipients   CampaignRecipient[]
 
+  @@index([organizationId, status])
   @@index([status])
   @@index([channel])
   @@index([templateName])
@@ -250,6 +421,7 @@ model CampaignRecipient {
 
 model WhatsAppTemplate {
   id              String                   @id @default(cuid())
+  organizationId  String?
   name            String
   language        String                   @default("en_US")
   category        WhatsAppTemplateCategory
@@ -261,7 +433,10 @@ model WhatsAppTemplate {
   createdAt       DateTime                 @default(now())
   updatedAt       DateTime                 @updatedAt
 
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
   @@unique([name, language])
+  @@index([organizationId])
   @@index([status])
   @@index([qualityRating])
 }

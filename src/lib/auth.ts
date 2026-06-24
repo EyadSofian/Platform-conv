@@ -25,11 +25,21 @@ export const authOptions: NextAuthOptions = {
 
         if (!email || !password) return null;
 
-        const user = await prisma.user.findUnique({ where: { email } });
+        const user = await prisma.user.findUnique({
+          where: { email },
+          include: {
+            memberships: {
+              orderBy: { createdAt: "asc" },
+              take: 1,
+            },
+          },
+        });
         if (!user?.password) return null;
 
         const valid = await compare(password, user.password);
         if (!valid) return null;
+
+        const membership = user.memberships[0] ?? null;
 
         return {
           id: user.id,
@@ -37,6 +47,8 @@ export const authOptions: NextAuthOptions = {
           email: user.email,
           image: user.image,
           role: user.role,
+          organizationId: membership?.organizationId ?? null,
+          orgRole: membership?.role ?? null,
         };
       },
     }),
@@ -46,6 +58,8 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.id = user.id;
         token.role = user.role;
+        token.organizationId = user.organizationId ?? null;
+        token.orgRole = user.orgRole ?? null;
       }
       return token;
     },
@@ -53,6 +67,8 @@ export const authOptions: NextAuthOptions = {
       if (session.user) {
         session.user.id = token.id as string;
         session.user.role = token.role as string;
+        session.user.organizationId = (token.organizationId as string) ?? null;
+        session.user.orgRole = (token.orgRole as string) ?? null;
       }
       return session;
     },

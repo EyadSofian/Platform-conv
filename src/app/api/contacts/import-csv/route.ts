@@ -1,14 +1,52 @@
-import { Prisma } from "@prisma/client";
 import { parse } from "csv-parse/sync";
 import { created, handleRouteError } from "@/lib/api";
-import { prisma } from "@/lib/prisma";
+import { resolveOrganizationId } from "@/lib/org";
+import { requireUser } from "@/lib/session";
 import { contactCreateSchema } from "@/lib/validators";
+import { upsertContact } from "@/services/contact-service";
 import { ensureConversationForContact } from "@/services/conversation-service";
 
 export const runtime = "nodejs";
 
+// Columns consumed by the structured schema; everything else becomes a custom
+// field so imports never silently drop data.
+const KNOWN_COLUMNS = new Set([
+  "name",
+  "phone",
+  "email",
+  "channel",
+  "status",
+  "tags",
+  "botpressuserid",
+  "botpress_user_id",
+  "botpressconvid",
+  "botpress_conversation_id",
+  "assignedagentid",
+  "whatsappoptin",
+  "opt_in",
+  "whatsappoptinat",
+  "opt_in_at",
+  "whatsappoptinsource",
+  "opt_in_source",
+  "unsubscribed",
+  "marketingpaused",
+]);
+
+function buildCustomFields(row: Record<string, string>) {
+  const custom: Record<string, string> = {};
+  for (const [key, value] of Object.entries(row)) {
+    if (!KNOWN_COLUMNS.has(key.toLowerCase().trim()) && value) {
+      custom[key] = value;
+    }
+  }
+  return Object.keys(custom).length > 0 ? custom : undefined;
+}
+
 export async function POST(request: Request) {
   try {
+    const user = await requireUser();
+    const organizationId = await resolveOrganizationId(user.organizationId);
+
     const formData = await request.formData();
     const file = formData.get("file");
 
@@ -23,66 +61,56 @@ export async function POST(request: Request) {
       trim: true,
     }) as Record<string, string>[];
 
-    const imported = [];
+    let importedCount = 0;
+    let deduplicatedCount = 0;
+    const errors: { row: number; error: string }[] = [];
 
-    for (const row of rows) {
-      const input = contactCreateSchema.parse({
-        name: row.name || row.Name || undefined,
-        phone: row.phone || row.Phone || undefined,
-        email: row.email || row.Email || undefined,
-        channel: row.channel || row.Channel || "web",
-        botpressUserId: row.botpressUserId || row.botpress_user_id || undefined,
-        botpressConvId:
-          row.botpressConvId || row.botpress_conversation_id || undefined,
-        status: row.status || "active",
-        assignedAgentId: row.assignedAgentId || undefined,
-        whatsappOptIn:
-          /^(true|yes|1)$/i.test(row.whatsappOptIn || row.opt_in || ""),
-        whatsappOptInAt:
-          row.whatsappOptInAt || row.opt_in_at || undefined,
-        whatsappOptInSource:
-          row.whatsappOptInSource || row.opt_in_source || "csv_import",
-        tags: (row.tags || "")
-          .split(/[;,|]/)
-          .map((tag) => tag.trim())
-          .filter(Boolean),
-        metadata: { importedFrom: file.name },
-      });
+    for (let i = 0; i < rows.length; i += 1) {
+      const row = rows[i];
+      try {
+        const input = contactCreateSchema.parse({
+          name: row.name || row.Name || undefined,
+          phone: row.phone || row.Phone || undefined,
+          email: row.email || row.Email || undefined,
+          channel: row.channel || row.Channel || "web",
+          botpressUserId: row.botpressUserId || row.botpress_user_id || undefined,
+          botpressConvId:
+            row.botpressConvId || row.botpress_conversation_id || undefined,
+          status: row.status || "active",
+          whatsappOptIn: /^(true|yes|1)$/i.test(row.whatsappOptIn || row.opt_in || ""),
+          whatsappOptInAt: row.whatsappOptInAt || row.opt_in_at || undefined,
+          whatsappOptInSource:
+            row.whatsappOptInSource || row.opt_in_source || "csv_import",
+          unsubscribed: /^(true|yes|1)$/i.test(row.unsubscribed || ""),
+          tags: (row.tags || "")
+            .split(/[;,|]/)
+            .map((tag) => tag.trim())
+            .filter(Boolean),
+          customFields: buildCustomFields(row),
+          metadata: { importedFrom: file.name },
+        });
 
-      const existing = input.botpressUserId
-        ? await prisma.contact.findUnique({
-            where: { botpressUserId: input.botpressUserId },
-          })
-        : input.email
-          ? await prisma.contact.findFirst({ where: { email: input.email } })
-          : null;
-
-      const contact = existing
-        ? await prisma.contact.update({
-            where: { id: existing.id },
-            data: {
-              ...input,
-              whatsappOptInAt: input.whatsappOptInAt
-                ? new Date(input.whatsappOptInAt)
-                : undefined,
-              metadata: input.metadata as Prisma.InputJsonObject,
-            },
-          })
-        : await prisma.contact.create({
-            data: {
-              ...input,
-              whatsappOptInAt: input.whatsappOptInAt
-                ? new Date(input.whatsappOptInAt)
-                : undefined,
-              metadata: input.metadata as Prisma.InputJsonObject,
-            },
-          });
-
-      await ensureConversationForContact(contact.id);
-      imported.push(contact);
+        const { contact, created: isNew } = await upsertContact(
+          organizationId,
+          input,
+        );
+        await ensureConversationForContact(contact.id);
+        importedCount += 1;
+        if (!isNew) deduplicatedCount += 1;
+      } catch (rowError) {
+        errors.push({
+          row: i + 2, // +1 for header, +1 for 1-based index
+          error: rowError instanceof Error ? rowError.message : "Invalid row",
+        });
+      }
     }
 
-    return created({ importedCount: imported.length, contacts: imported });
+    return created({
+      importedCount,
+      deduplicatedCount,
+      errorCount: errors.length,
+      errors: errors.slice(0, 50),
+    });
   } catch (error) {
     return handleRouteError(error);
   }

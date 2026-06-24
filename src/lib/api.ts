@@ -39,6 +39,15 @@ export function handleRouteError(error: unknown) {
     return apiError(error.message, error.status);
   }
 
+  // Domain errors that carry their own HTTP status (e.g. ServiceWindowError).
+  if (
+    error instanceof Error &&
+    "status" in error &&
+    typeof (error as { status: unknown }).status === "number"
+  ) {
+    return apiError(error.message, (error as { status: number }).status);
+  }
+
   if (error instanceof Error) {
     return apiError(error.message, 400);
   }

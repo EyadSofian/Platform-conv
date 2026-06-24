@@ -4,15 +4,24 @@ import {
   CampaignStatus,
   CampaignType,
   Channel,
+  ChannelHealthStatus,
+  ChannelType,
   ContactStatus,
   ConversationStatus,
   MessageSender,
+  OrgRole,
   UserRole,
 } from "@prisma/client";
 import { prisma } from "../src/lib/prisma";
 
 async function main() {
   const password = await hash("password123", 10);
+
+  const organization = await prisma.organization.upsert({
+    where: { slug: "default" },
+    update: {},
+    create: { name: "Acme Support", slug: "default" },
+  });
 
   const admin = await prisma.user.upsert({
     where: { email: "admin@example.com" },
@@ -38,10 +47,41 @@ async function main() {
     },
   });
 
-  const contact = await prisma.contact.upsert({
-    where: { botpressUserId: "demo-bp-user-1" },
+  await prisma.organizationMember.upsert({
+    where: {
+      organizationId_userId: { organizationId: organization.id, userId: admin.id },
+    },
+    update: { role: OrgRole.OWNER },
+    create: { organizationId: organization.id, userId: admin.id, role: OrgRole.OWNER },
+  });
+
+  await prisma.organizationMember.upsert({
+    where: {
+      organizationId_userId: { organizationId: organization.id, userId: agent.id },
+    },
+    update: { role: OrgRole.AGENT },
+    create: { organizationId: organization.id, userId: agent.id, role: OrgRole.AGENT },
+  });
+
+  // Example WhatsApp Cloud channel account (credentials come from env at runtime).
+  await prisma.channelAccount.upsert({
+    where: { id: "demo-whatsapp-account" },
     update: {},
     create: {
+      id: "demo-whatsapp-account",
+      organizationId: organization.id,
+      type: ChannelType.WHATSAPP_CLOUD,
+      name: "Primary WhatsApp",
+      status: ChannelHealthStatus.MISSING_CONFIG,
+      config: { note: "Set WHATSAPP_* env vars or fill credentials to activate." },
+    },
+  });
+
+  const contact = await prisma.contact.upsert({
+    where: { botpressUserId: "demo-bp-user-1" },
+    update: { organizationId: organization.id },
+    create: {
+      organizationId: organization.id,
       name: "Maya Hassan",
       phone: "+201001234567",
       email: "maya@example.com",
@@ -60,13 +100,15 @@ async function main() {
 
   await prisma.conversation.upsert({
     where: { contactId: contact.id },
-    update: {},
+    update: { organizationId: organization.id },
     create: {
       contactId: contact.id,
+      organizationId: organization.id,
       status: ConversationStatus.HUMAN,
       assignedAgentId: agent.id,
       unreadCount: 2,
       lastMessageAt: new Date(),
+      lastCustomerMessageAt: new Date(),
     },
   });
 
@@ -102,6 +144,7 @@ async function main() {
     update: {},
     create: {
       id: "demo-campaign-spring",
+      organizationId: organization.id,
       name: "Spring reactivation",
       message:
         "We have a new WhatsApp automation bundle for growing teams. Want a quick walkthrough?",
@@ -126,6 +169,7 @@ async function main() {
     },
     update: {},
     create: {
+      organizationId: organization.id,
       name: "spring_reactivation_ar",
       language: "ar_EG",
       category: "MARKETING",

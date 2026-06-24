@@ -48,10 +48,13 @@ export const contactCreateSchema = z.object({
   status: contactStatusSchema.default("ACTIVE"),
   assignedAgentId: z.string().trim().optional().nullable(),
   tags: z.array(z.string().trim()).default([]),
+  customFields: z.record(z.string(), z.unknown()).optional(),
   whatsappOptIn: z.boolean().default(false),
   whatsappOptInAt: z.string().datetime().optional().nullable(),
   whatsappOptInSource: z.string().trim().optional().nullable(),
+  whatsappOptInEvidence: z.record(z.string(), z.unknown()).optional(),
   marketingPaused: z.boolean().default(false),
+  unsubscribed: z.boolean().default(false),
   odooPartnerId: z.number().int().optional().nullable(),
   odooLeadId: z.number().int().optional().nullable(),
   metadata: z.record(z.string(), z.unknown()).optional(),
@@ -64,6 +67,14 @@ export const sendMessageSchema = z.object({
   content: z.string().trim().min(1),
   type: messageTypeSchema.default("TEXT"),
   senderId: z.string().optional().nullable(),
+  // Approved WhatsApp template used to reply outside the 24h service window.
+  template: z
+    .object({
+      name: z.string().min(1),
+      language: z.string().min(1).default("en_US"),
+      variables: z.array(z.string()).optional(),
+    })
+    .optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 

@@ -11,6 +11,7 @@ const badgeVariants = cva(
         teal: "border-teal-200 bg-teal-50 text-teal-700",
         amber: "border-amber-200 bg-amber-50 text-amber-700",
         red: "border-red-200 bg-red-50 text-red-700",
+        blue: "border-blue-200 bg-blue-50 text-blue-700",
         slate: "border-slate-300 bg-slate-100 text-slate-700",
       },
     },

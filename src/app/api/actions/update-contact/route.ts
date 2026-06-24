@@ -26,6 +26,10 @@ export async function POST(request: Request) {
           ? new Date(input.whatsappOptInAt)
           : input.whatsappOptInAt,
         metadata: input.metadata as Prisma.InputJsonObject | undefined,
+        customFields: input.customFields as Prisma.InputJsonObject | undefined,
+        whatsappOptInEvidence: input.whatsappOptInEvidence as
+          | Prisma.InputJsonObject
+          | undefined,
       },
     });
 

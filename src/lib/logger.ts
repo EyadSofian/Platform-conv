@@ -53,6 +53,9 @@ export type AuditEvent =
   | "conversation.resume"
   | "conversation.close"
   | "conversation.assign"
+  | "conversation.note"
+  | "whatsapp.inbound"
+  | "whatsapp.status"
   | "message.sent"
   | "botpress.test"
   | "user.signin";

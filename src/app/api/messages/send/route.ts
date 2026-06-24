@@ -10,6 +10,10 @@ import { log, recordAudit } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 import { sendMessageSchema } from "@/lib/validators";
 import { recordMessage } from "@/services/conversation-service";
+import {
+  contactUsesWhatsApp,
+  deliverWhatsAppReply,
+} from "@/services/channel-outbound-service";
 
 export const runtime = "nodejs";
 
@@ -35,8 +39,30 @@ export async function POST(request: Request) {
       sender: MessageSender.AGENT,
       senderId: input.senderId,
       type: input.type as MessageType,
+      organizationId: contact.organizationId,
       metadata: input.metadata as Prisma.InputJsonObject | undefined,
     });
+
+    // Direct WhatsApp Cloud delivery (enforces the 24h service window).
+    if (contactUsesWhatsApp(contact)) {
+      const whatsappDelivery = await deliverWhatsAppReply({
+        contact,
+        conversation,
+        messageId: message.id,
+        type: input.type as MessageType,
+        content: input.content,
+        template: input.template,
+      });
+
+      recordAudit("message.sent", input.senderId ?? null, {
+        conversationId: conversation.id,
+        messageId: message.id,
+        channel: "whatsapp",
+        delivered: whatsappDelivery.ok,
+      });
+
+      return ok({ message, conversation, whatsappDelivery });
+    }
 
     let botpressDelivery: Awaited<ReturnType<typeof sendBotPressMessage>> | null =
       null;

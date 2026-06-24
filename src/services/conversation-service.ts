@@ -4,6 +4,7 @@ import {
   ConversationStatus,
   Channel,
   MessageSender,
+  MessageStatus,
   MessageType,
   Prisma,
   UserRole,
@@ -25,9 +26,17 @@ export async function chooseAvailableAgent() {
 }
 
 export async function ensureConversationForContact(contactId: string) {
+  const contact = await prisma.contact.findUnique({
+    where: { id: contactId },
+    select: { organizationId: true },
+  });
   return prisma.conversation.upsert({
     where: { contactId },
-    create: { contactId, status: ConversationStatus.BOT },
+    create: {
+      contactId,
+      status: ConversationStatus.BOT,
+      organizationId: contact?.organizationId ?? undefined,
+    },
     update: {},
     include: {
       contact: true,
@@ -177,9 +186,14 @@ export async function recordMessage(input: {
   senderId?: string | null;
   isNote?: boolean;
   botpressMessageId?: string | null;
+  organizationId?: string | null;
+  channelAccountId?: string | null;
+  externalId?: string | null;
+  status?: MessageStatus | null;
   metadata?: Prisma.InputJsonValue;
 }) {
   const now = new Date();
+  const isCustomer = input.sender === MessageSender.CUSTOMER;
 
   const result = await prisma.$transaction(async (tx) => {
     const message = await tx.message.create({
@@ -191,6 +205,10 @@ export async function recordMessage(input: {
         type: input.type ?? (input.isNote ? MessageType.NOTE : MessageType.TEXT),
         isNote: input.isNote ?? false,
         botpressMessageId: input.botpressMessageId,
+        organizationId: input.organizationId ?? undefined,
+        channelAccountId: input.channelAccountId ?? undefined,
+        externalId: input.externalId ?? undefined,
+        status: input.status ?? undefined,
         metadata: input.metadata,
       },
       include: { contact: true },
@@ -201,15 +219,18 @@ export async function recordMessage(input: {
       create: {
         contactId: input.contactId,
         status: ConversationStatus.BOT,
+        organizationId: input.organizationId ?? undefined,
+        channelAccountId: input.channelAccountId ?? undefined,
         lastMessageAt: now,
-        unreadCount: input.sender === MessageSender.CUSTOMER ? 1 : 0,
+        lastCustomerMessageAt: isCustomer ? now : undefined,
+        unreadCount: isCustomer ? 1 : 0,
       },
       update: {
         lastMessageAt: now,
-        unreadCount:
-          input.sender === MessageSender.CUSTOMER
-            ? { increment: 1 }
-            : undefined,
+        lastCustomerMessageAt: isCustomer ? now : undefined,
+        organizationId: input.organizationId ?? undefined,
+        channelAccountId: input.channelAccountId ?? undefined,
+        unreadCount: isCustomer ? { increment: 1 } : undefined,
       },
       include: {
         contact: true,

@@ -4,15 +4,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot,
   CheckCircle2,
+  CheckCheck,
+  Check,
   CirclePause,
   FilePlus2,
   ImageIcon,
   Loader2,
+  Lock,
   MessageSquarePlus,
   Paperclip,
   RefreshCw,
   Send,
   Tag,
+  UserPlus,
   UserRound,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -23,7 +27,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn, initials } from "@/lib/utils";
 import { useSocket } from "@/hooks/use-socket";
 
-type FilterKey = "all" | "bot" | "human" | "closed" | "unassigned" | "mine";
+type FilterKey =
+  | "all"
+  | "bot"
+  | "human"
+  | "closed"
+  | "unassigned"
+  | "mine"
+  | "whatsapp"
+  | "messenger"
+  | "telegram";
 
 type ConversationStatus = "BOT" | "HUMAN" | "CLOSED";
 
@@ -66,9 +79,22 @@ type Message = {
   sender: MessageSender;
   senderId: string | null;
   isNote: boolean;
+  status?: string | null;
   createdAt: string;
   metadata?: Record<string, unknown> | null;
 };
+
+type Note = {
+  id: string;
+  body: string;
+  createdAt: string;
+  authorId: string | null;
+  author?: { id: string; name: string | null; email: string | null } | null;
+};
+
+type TimelineItem =
+  | { kind: "message"; at: number; message: Message }
+  | { kind: "note"; at: number; note: Note };
 
 type SessionResponse = {
   user?: { id?: string; name?: string | null; email?: string | null };
@@ -76,18 +102,34 @@ type SessionResponse = {
 
 const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "all", label: "All" },
-  { key: "bot", label: "Bot active" },
-  { key: "human", label: "Human" },
-  { key: "unassigned", label: "Unassigned" },
   { key: "mine", label: "Mine" },
+  { key: "unassigned", label: "Unassigned" },
+  { key: "bot", label: "Bot" },
+  { key: "human", label: "Human" },
   { key: "closed", label: "Closed" },
+  { key: "whatsapp", label: "WhatsApp" },
+  { key: "messenger", label: "Messenger" },
+  { key: "telegram", label: "Telegram" },
 ];
+
+const CHANNEL_FILTER_KEYS: Partial<Record<FilterKey, Channel>> = {
+  whatsapp: "WHATSAPP",
+  messenger: "MESSENGER",
+  telegram: "TELEGRAM",
+};
 
 const CHANNEL_LABEL: Record<Channel, string> = {
   WHATSAPP: "WhatsApp",
   WEB: "Webchat",
   TELEGRAM: "Telegram",
   MESSENGER: "Messenger",
+};
+
+const CHANNEL_BADGE_TONE: Record<Channel, "teal" | "slate" | "amber" | "blue"> = {
+  WHATSAPP: "teal",
+  WEB: "slate",
+  TELEGRAM: "blue",
+  MESSENGER: "blue",
 };
 
 function formatTime(iso?: string | null) {
@@ -110,6 +152,24 @@ function senderLabel(sender: MessageSender) {
   }
 }
 
+function MessageStatusIcon({ status }: { status?: string | null }) {
+  if (!status) return null;
+  const normalized = status.toUpperCase();
+  if (normalized === "READ") {
+    return <CheckCheck className="h-3 w-3 text-sky-300" aria-label="Read" />;
+  }
+  if (normalized === "DELIVERED") {
+    return <CheckCheck className="h-3 w-3" aria-label="Delivered" />;
+  }
+  if (normalized === "SENT") {
+    return <Check className="h-3 w-3" aria-label="Sent" />;
+  }
+  if (normalized === "FAILED") {
+    return <span className="text-[10px] font-semibold text-red-300">Failed</span>;
+  }
+  return null;
+}
+
 function buildConversationsQuery(filter: FilterKey, agentId?: string, q?: string) {
   const params = new URLSearchParams();
   if (filter === "bot") params.set("status", "BOT");
@@ -117,6 +177,8 @@ function buildConversationsQuery(filter: FilterKey, agentId?: string, q?: string
   if (filter === "closed") params.set("status", "CLOSED");
   if (filter === "unassigned") params.set("unassigned", "true");
   if (filter === "mine" && agentId) params.set("agentId", agentId);
+  const channel = CHANNEL_FILTER_KEYS[filter];
+  if (channel) params.set("channel", channel);
   if (q) params.set("q", q);
   const qs = params.toString();
   return `/api/conversations${qs ? `?${qs}` : ""}`;
@@ -132,13 +194,15 @@ export function InboxClient() {
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [notes, setNotes] = useState<Note[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [messagesError, setMessagesError] = useState<string | null>(null);
 
   const [draft, setDraft] = useState("");
+  const [composerMode, setComposerMode] = useState<"reply" | "note">("reply");
   const [sending, setSending] = useState(false);
   const [actionPending, setActionPending] = useState<
-    "takeover" | "resume" | "close" | null
+    "takeover" | "resume" | "close" | "assign" | null
   >(null);
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -209,24 +273,36 @@ export function InboxClient() {
   useEffect(() => {
     if (!activeId) {
       setMessages([]);
+      setNotes([]);
       return;
     }
     const controller = new AbortController();
     setMessagesLoading(true);
     setMessagesError(null);
-    fetch(`/api/conversations/${activeId}/messages?limit=100`, {
-      cache: "no-store",
-      signal: controller.signal,
-    })
-      .then(async (response) => {
+    Promise.all([
+      fetch(`/api/conversations/${activeId}/messages?limit=100`, {
+        cache: "no-store",
+        signal: controller.signal,
+      }).then(async (response) => {
         if (!response.ok) {
           const body = await response.json().catch(() => ({}));
           throw new Error(body?.error || `Failed (${response.status})`);
         }
-        const json = (await response.json()) as {
-          data: { messages: Message[] };
-        };
-        setMessages(json.data.messages);
+        return (await response.json()) as { data: { messages: Message[] } };
+      }),
+      fetch(`/api/conversations/${activeId}/notes`, {
+        cache: "no-store",
+        signal: controller.signal,
+      })
+        .then(async (response) => {
+          if (!response.ok) return { data: [] as Note[] };
+          return (await response.json()) as { data: Note[] };
+        })
+        .catch(() => ({ data: [] as Note[] })),
+    ])
+      .then(([messagesJson, notesJson]) => {
+        setMessages(messagesJson.data.messages);
+        setNotes(notesJson.data);
       })
       .catch((error) => {
         if ((error as Error).name === "AbortError") return;
@@ -236,10 +312,27 @@ export function InboxClient() {
     return () => controller.abort();
   }, [activeId]);
 
+  const timeline = useMemo<TimelineItem[]>(() => {
+    const items: TimelineItem[] = [
+      ...messages.map((message) => ({
+        kind: "message" as const,
+        at: new Date(message.createdAt).getTime(),
+        message,
+      })),
+      ...notes.map((note) => ({
+        kind: "note" as const,
+        at: new Date(note.createdAt).getTime(),
+        note,
+      })),
+    ];
+    items.sort((a, b) => a.at - b.at);
+    return items;
+  }, [messages, notes]);
+
   useEffect(() => {
     if (!scrollRef.current) return;
     scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages]);
+  }, [timeline]);
 
   useEffect(() => {
     if (!socket || !activeId) return;
@@ -251,8 +344,19 @@ export function InboxClient() {
 
   useEffect(() => {
     if (!socket) return;
-    const handleMessage = (payload: Message & { contactId?: string }) => {
+    const handleMessage = (
+      payload: Message & { contactId?: string; _statusUpdate?: boolean },
+    ) => {
       if (!payload?.id) return;
+      // Delivery/read status updates only patch an existing message.
+      if (payload._statusUpdate) {
+        setMessages((current) =>
+          current.map((m) =>
+            m.id === payload.id ? { ...m, status: payload.status } : m,
+          ),
+        );
+        return;
+      }
       const active = activeIdRef.current;
       const matchActive =
         !!active &&
@@ -262,6 +366,12 @@ export function InboxClient() {
           current.some((m) => m.id === payload.id) ? current : [...current, payload],
         );
       }
+    };
+    const handleNote = (payload: Note) => {
+      if (!payload?.id) return;
+      setNotes((current) =>
+        current.some((n) => n.id === payload.id) ? current : [...current, payload],
+      );
     };
     const handleConversationUpdated = (payload: Conversation) => {
       if (!payload?.id) return;
@@ -281,15 +391,20 @@ export function InboxClient() {
       });
     };
     socket.on("message.created", handleMessage);
+    socket.on("note.created", handleNote);
     socket.on("conversation.updated", handleConversationUpdated);
     return () => {
       socket.off("message.created", handleMessage);
+      socket.off("note.created", handleNote);
       socket.off("conversation.updated", handleConversationUpdated);
     };
   }, [socket, conversations]);
 
   async function handleSend() {
     if (!activeConversation || !draft.trim() || sending) return;
+    if (composerMode === "note") {
+      return handleAddNote();
+    }
     setSending(true);
     const content = draft.trim();
     try {
@@ -319,6 +434,70 @@ export function InboxClient() {
       toast.error((error as Error).message || "Failed to send message");
     } finally {
       setSending(false);
+    }
+  }
+
+  async function handleAddNote() {
+    if (!activeConversation || !draft.trim() || sending) return;
+    setSending(true);
+    const body = draft.trim();
+    try {
+      const response = await fetch(
+        `/api/conversations/${activeConversation.id}/notes`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ body }),
+        },
+      );
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload?.error || `Failed (${response.status})`);
+      }
+      const json = (await response.json()) as { data: Note };
+      setNotes((current) =>
+        current.some((n) => n.id === json.data.id)
+          ? current
+          : [...current, json.data],
+      );
+      setDraft("");
+      toast.success("Private note added");
+    } catch (error) {
+      toast.error((error as Error).message || "Failed to add note");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function handleAssignToMe() {
+    if (!activeConversation || !currentUserId || actionPending) return;
+    setActionPending("assign");
+    try {
+      const response = await fetch(
+        `/api/conversations/${activeConversation.id}/assign`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ agentId: currentUserId }),
+        },
+      );
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body?.error || `Failed (${response.status})`);
+      }
+      const json = (await response.json()) as { data: Conversation };
+      setConversations((current) => {
+        const idx = current.findIndex((c) => c.id === json.data.id);
+        if (idx === -1) return current;
+        const next = [...current];
+        next[idx] = { ...next[idx], ...json.data };
+        return next;
+      });
+      toast.success("Assigned to you");
+    } catch (error) {
+      toast.error((error as Error).message || "Assign failed");
+    } finally {
+      setActionPending(null);
     }
   }
 
@@ -492,9 +671,9 @@ export function InboxClient() {
                             ? "Agent handling"
                             : "Bot active"}
                       </Badge>
-                      <span className="text-xs text-muted-foreground">
+                      <Badge tone={CHANNEL_BADGE_TONE[contact.channel] ?? "slate"}>
                         {CHANNEL_LABEL[contact.channel] ?? contact.channel}
-                      </span>
+                      </Badge>
                       {conversation.assignedAgent?.name && (
                         <span className="text-xs text-muted-foreground">
                           · {conversation.assignedAgent.name}
@@ -555,6 +734,28 @@ export function InboxClient() {
                         ? "Agent Handling"
                         : "Bot Active"}
                   </Badge>
+                  <Badge tone={CHANNEL_BADGE_TONE[activeConversation.contact.channel]}>
+                    {CHANNEL_LABEL[activeConversation.contact.channel] ??
+                      activeConversation.contact.channel}
+                  </Badge>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={
+                      !currentUserId ||
+                      actionPending !== null ||
+                      activeConversation.assignedAgentId === currentUserId
+                    }
+                    onClick={() => void handleAssignToMe()}
+                    title="Assign this conversation to me"
+                  >
+                    {actionPending === "assign" ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <UserPlus className="h-4 w-4" />
+                    )}
+                    Assign to me
+                  </Button>
                   <Button
                     size="sm"
                     variant="outline"
@@ -633,15 +834,42 @@ export function InboxClient() {
                     {messagesError}
                   </div>
                 )}
-                {!messagesLoading && !messagesError && messages.length === 0 && (
+                {!messagesLoading && !messagesError && timeline.length === 0 && (
                   <div className="rounded-md border border-dashed bg-card p-6 text-center text-sm text-muted-foreground">
-                    No messages yet. Bot or agent replies will appear here.
+                    No messages yet. Bot, agent replies, and private notes will
+                    appear here.
                   </div>
                 )}
-                {messages.map((message) => {
+                {timeline.map((item) => {
+                  if (item.kind === "note") {
+                    const note = item.note;
+                    return (
+                      <div key={`note-${note.id}`} className="flex justify-center">
+                        <div className="max-w-[90%] rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 shadow-sm">
+                          <div className="mb-1 flex items-center gap-2 text-xs font-semibold text-amber-700">
+                            <Lock className="h-3 w-3" />
+                            <span>Private note</span>
+                            {note.author?.name && (
+                              <span className="font-normal">
+                                · {note.author.name}
+                              </span>
+                            )}
+                            <span className="font-normal">
+                              {formatTime(note.createdAt)}
+                            </span>
+                          </div>
+                          <p className="whitespace-pre-wrap text-sm leading-6 text-amber-900">
+                            {note.body}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  const message = item.message;
                   const isAgent = message.sender === "AGENT";
                   const isBot = message.sender === "BOT";
-                  const isSystem = message.sender === "SYSTEM" || message.isNote;
+                  const isSystem = message.sender === "SYSTEM";
                   return (
                     <div
                       key={message.id}
@@ -666,6 +894,7 @@ export function InboxClient() {
                           {isAgent && <UserRound className="h-3 w-3" />}
                           <span>{senderLabel(message.sender)}</span>
                           <span>{formatTime(message.createdAt)}</span>
+                          {isAgent && <MessageStatusIcon status={message.status} />}
                         </div>
                         <p className="whitespace-pre-wrap text-sm leading-6">
                           {message.content}
@@ -677,17 +906,53 @@ export function InboxClient() {
               </div>
             </div>
 
-            <footer className="border-t bg-card p-4">
+            <footer
+              className={cn(
+                "border-t p-4",
+                composerMode === "note" ? "bg-amber-50" : "bg-card",
+              )}
+            >
               <div className="mx-auto max-w-4xl">
+                <div className="mb-2 flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setComposerMode("reply")}
+                    className={cn(
+                      "h-7 rounded-full border px-3 text-xs font-medium transition",
+                      composerMode === "reply"
+                        ? "border-slate-900 bg-slate-900 text-white"
+                        : "border-border bg-card text-muted-foreground hover:bg-muted",
+                    )}
+                  >
+                    Reply
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setComposerMode("note")}
+                    className={cn(
+                      "flex h-7 items-center gap-1 rounded-full border px-3 text-xs font-medium transition",
+                      composerMode === "note"
+                        ? "border-amber-500 bg-amber-500 text-white"
+                        : "border-border bg-card text-muted-foreground hover:bg-muted",
+                    )}
+                  >
+                    <Lock className="h-3 w-3" />
+                    Private note
+                  </button>
+                </div>
                 <Textarea
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
                   placeholder={
-                    status === "CLOSED"
-                      ? "This conversation is closed. Reopen to reply."
-                      : "Write a reply (Ctrl+Enter to send)"
+                    composerMode === "note"
+                      ? "Write an internal note (only your team can see this)"
+                      : status === "CLOSED"
+                        ? "This conversation is closed. Reopen to reply."
+                        : "Write a reply (Ctrl+Enter to send)"
                   }
-                  disabled={status === "CLOSED" || sending}
+                  disabled={
+                    (composerMode === "reply" && status === "CLOSED") || sending
+                  }
                   onKeyDown={(event) => {
                     if (
                       event.key === "Enter" &&
@@ -706,7 +971,16 @@ export function InboxClient() {
                     <Button variant="ghost" size="icon" title="Attach image" disabled>
                       <ImageIcon className="h-4 w-4" />
                     </Button>
-                    <Button variant="ghost" size="icon" title="Add internal note" disabled>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title="Add internal note"
+                      onClick={() =>
+                        setComposerMode((mode) =>
+                          mode === "note" ? "reply" : "note",
+                        )
+                      }
+                    >
                       <FilePlus2 className="h-4 w-4" />
                     </Button>
                     <Button variant="ghost" size="icon" title="Quick reply" disabled>
@@ -715,17 +989,21 @@ export function InboxClient() {
                   </div>
                   <Button
                     onClick={() => void handleSend()}
-                    variant="accent"
+                    variant={composerMode === "note" ? "outline" : "accent"}
                     disabled={
-                      status === "CLOSED" || sending || draft.trim().length === 0
+                      (composerMode === "reply" && status === "CLOSED") ||
+                      sending ||
+                      draft.trim().length === 0
                     }
                   >
                     {sending ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : composerMode === "note" ? (
+                      <Lock className="h-4 w-4" />
                     ) : (
                       <Send className="h-4 w-4" />
                     )}
-                    Send
+                    {composerMode === "note" ? "Add note" : "Send"}
                   </Button>
                 </div>
               </div>
