@@ -8,6 +8,7 @@ import { prisma } from "../lib/prisma";
 import { emitRealtime } from "../lib/realtime";
 import { runAutomations } from "./automation-service";
 import { dispatchIntegrationEvent } from "./integration-service";
+import { ingestRemoteMedia } from "./media-service";
 import { recordMessage } from "./conversation-service";
 import type {
   NormalizedMessageEvent,
@@ -97,6 +98,29 @@ export async function ingestInboundMessage(params: {
     event.text ??
     (event.media ? `[${event.media.kind}]${event.media.caption ? ` ${event.media.caption}` : ""}` : "");
 
+  // Pull any inbound media into our own storage so the inbox serves a stable,
+  // authenticated URL instead of a provider/CDN link that can expire.
+  let hostedMedia: Awaited<ReturnType<typeof ingestRemoteMedia>> | null = null;
+  if (event.media?.url) {
+    hostedMedia = await ingestRemoteMedia({
+      url: event.media.url,
+      organizationId,
+      contentType: event.media.mimeType,
+    });
+  }
+
+  const metadata: Record<string, unknown> = { channelRaw: event.raw };
+  if (event.media) {
+    metadata.media = {
+      kind: event.media.kind,
+      mimeType: event.media.mimeType ?? hostedMedia?.contentType ?? null,
+      caption: event.media.caption ?? null,
+      providerId: event.media.id ?? null,
+      url: hostedMedia?.url ?? event.media.url ?? null,
+      stored: Boolean(hostedMedia),
+    };
+  }
+
   const { message, conversation } = await recordMessage({
     contactId: contact.id,
     content: content || "[message]",
@@ -105,7 +129,7 @@ export async function ingestInboundMessage(params: {
     organizationId,
     channelAccountId: channelAccountId ?? null,
     externalId: event.externalId ?? null,
-    metadata: { channelRaw: event.raw } as Prisma.InputJsonObject,
+    metadata: metadata as Prisma.InputJsonObject,
   });
 
   if (conversation.assignedAgentId) {

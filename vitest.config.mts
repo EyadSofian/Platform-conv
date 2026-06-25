@@ -16,6 +16,7 @@ export default defineConfig({
       DATABASE_URL:
         "postgresql://postgres:postgres@localhost:5432/test?schema=public",
       NODE_ENV: "test",
+      MEDIA_DIR: ".media-test",
     },
   },
 });

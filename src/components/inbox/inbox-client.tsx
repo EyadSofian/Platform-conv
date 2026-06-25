@@ -172,6 +172,54 @@ function MessageStatusIcon({ status }: { status?: string | null }) {
   return null;
 }
 
+function MessageMedia({
+  metadata,
+}: {
+  metadata?: Record<string, unknown> | null;
+}) {
+  const media = metadata?.media as
+    | { url?: string | null; kind?: string; mimeType?: string | null }
+    | undefined;
+  if (!media?.url) return null;
+
+  const isImage =
+    media.kind === "image" || (media.mimeType ?? "").startsWith("image/");
+
+  if (isImage) {
+    return (
+      <a
+        href={media.url}
+        target="_blank"
+        rel="noreferrer"
+        className="mt-2 block"
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={media.url}
+          alt={media.kind ?? "attachment"}
+          className="max-h-64 w-auto rounded-md border"
+        />
+      </a>
+    );
+  }
+
+  return (
+    <a
+      href={media.url}
+      target="_blank"
+      rel="noreferrer"
+      className="mt-2 inline-flex items-center gap-2 rounded-md border bg-white/60 px-3 py-2 text-xs font-medium"
+    >
+      {media.kind === "image" ? (
+        <ImageIcon className="h-4 w-4" />
+      ) : (
+        <Paperclip className="h-4 w-4" />
+      )}
+      {media.kind ?? "attachment"}
+    </a>
+  );
+}
+
 function buildConversationsQuery(filter: FilterKey, agentId?: string, q?: string) {
   const params = new URLSearchParams();
   if (filter === "bot") params.set("status", "BOT");
@@ -901,6 +949,7 @@ export function InboxClient() {
                         <p className="whitespace-pre-wrap text-sm leading-6">
                           {message.content}
                         </p>
+                        <MessageMedia metadata={message.metadata} />
                       </div>
                     </div>
                   );

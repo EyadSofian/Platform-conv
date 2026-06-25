@@ -32,6 +32,10 @@ yarn-error.log*
 .env*.local
 !.env.example
 
+# local media storage (LocalDiskStorage driver)
+/.media
+/.media-test
+
 # vercel
 .vercel
 
