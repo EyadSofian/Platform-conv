@@ -16,6 +16,7 @@ import {
   UsersRound,
 } from "lucide-react";
 import { cn, initials } from "@/lib/utils";
+import { WorkspaceSwitcher } from "@/components/app/workspace-switcher";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -45,6 +46,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <p className="text-sm font-semibold">SalesOps Console</p>
             <p className="text-xs text-slate-400">BotPress handoff hub</p>
           </div>
+        </div>
+        <div className="px-3 pt-3">
+          <WorkspaceSwitcher />
         </div>
         <nav className="space-y-1 px-3 py-4">
           {navItems.map((item) => {

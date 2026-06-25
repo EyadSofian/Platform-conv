@@ -54,12 +54,33 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger, session }) {
       if (user) {
         token.id = user.id;
         token.role = user.role;
         token.organizationId = user.organizationId ?? null;
         token.orgRole = user.orgRole ?? null;
+      }
+
+      // Workspace switching: the client calls `update({ organizationId })`.
+      // Only honour it when the user is actually a member of that workspace.
+      if (
+        trigger === "update" &&
+        session?.organizationId &&
+        token.id
+      ) {
+        const membership = await prisma.organizationMember.findUnique({
+          where: {
+            organizationId_userId: {
+              organizationId: String(session.organizationId),
+              userId: String(token.id),
+            },
+          },
+        });
+        if (membership) {
+          token.organizationId = membership.organizationId;
+          token.orgRole = membership.role;
+        }
       }
       return token;
     },
