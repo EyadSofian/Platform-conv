@@ -266,7 +266,9 @@ on more than one customer:
    billing-ready org metadata (plan, seat count, status).
 
 6. **NextAuth**: keep credentials. Add an `organizationId` claim to the JWT,
-   sourced from `OrganizationMember` on sign-in. Add a workspace switcher.
+   sourced from `OrganizationMember` on sign-in. ✅ Done — plus a sidebar
+   workspace switcher that re-issues the claim through the `update` trigger
+   (membership-validated in the jwt callback). See `/api/workspaces`.
 
 7. **Background jobs**: pass `organizationId` through the Bull queue, the
    campaign worker, and the Odoo sync — every job must run inside one org's

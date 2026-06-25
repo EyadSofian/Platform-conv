@@ -100,10 +100,16 @@ and agent messages, and never sends them to the customer.
 ### Automation rules
 - `AutomationRule` (org-scoped) pairs a trigger with an action. The engine
   (`runAutomations`) runs on inbound ingest for `NEW_CONVERSATION`,
-  `NEW_MESSAGE`, `MESSAGE_KEYWORD`, and `CHANNEL_IS` triggers; actions
-  `ADD_TAG`, `ASSIGN_AGENT`, `NOTIFY`, `CLOSE`, `SNOOZE`, and `SEND_WEBHOOK` are
-  implemented (others are scaffolded). Rules are managed at
-  `/api/automation-rules` (+ `/:id`) and the **Settings → Automation** page;
+  `NEW_MESSAGE`, `MESSAGE_KEYWORD`, and `CHANNEL_IS` triggers. The time-based
+  triggers `NO_REPLY_AFTER` and `OUTSIDE_BUSINESS_HOURS` are evaluated by
+  `runScheduledAutomations` — run continuously via `npm run worker:scheduler`
+  or hit `POST /api/automations/run-scheduled` from an external cron (set
+  `AUTOMATION_CRON_SECRET` for all-workspace runs). Scheduled rules are
+  idempotent per unanswered customer turn (a SYSTEM marker note dedupes).
+  Actions `ADD_TAG`, `ASSIGN_AGENT`, `NOTIFY`, `CLOSE`, `SNOOZE`, `SEND_WEBHOOK`,
+  `SEND_TEMPLATE` (WhatsApp Cloud), `CREATE_LEAD` (optional Odoo sync), and
+  `HANDOFF_BOTPRESS` (pause bot → human) are all implemented. Rules are managed
+  at `/api/automation-rules` (+ `/:id`) and the **Settings → Automation** page;
   editing requires ADMIN/SUPERVISOR. Failures are isolated per rule so a bad
   rule never blocks ingestion.
 
@@ -121,9 +127,25 @@ and agent messages, and never sends them to the customer.
   credentials (never returned to the client — `redactIntegration`).
 - `dispatchIntegrationEvent(orgId, event, data)` fans platform events out to
   enabled integrations subscribed to that event; ZAPIER/WEBHOOK perform an HTTP
-  POST, HubSpot/Shopify are scaffolded, Odoo keeps its dedicated service. Wired
-  to `message.received` on inbound ingest. Managed at `/api/integrations`
-  (ADMIN/SUPERVISOR), with per-integration error capture.
+  POST, **HubSpot** upserts the contact via the CRM v3 API (search-by-email →
+  patch/create) and **Shopify** upserts a customer via the Admin REST API, Odoo
+  keeps its dedicated service. Wired to `message.received` on inbound ingest.
+  Managed at `/api/integrations` (ADMIN/SUPERVISOR), with per-integration error
+  capture.
+
+### Media pipeline
+- `lib/storage.ts` is a small `StorageDriver` abstraction (local-disk driver by
+  default, S3-ready) that stores binaries plus a JSON metadata sidecar. Upload
+  via `POST /api/media` (multipart, size-capped by `MEDIA_MAX_BYTES`,
+  org-scoped); download via `GET /api/media/[id]` (workspace-scoped streaming).
+- Inbound channel media is pulled into our own storage by `ingestRemoteMedia`
+  so the inbox serves stable, authenticated URLs; a `media` descriptor is
+  recorded on the message metadata and rendered in the conversation thread.
+
+### Workspaces
+- `GET /api/workspaces` lists the signed-in user's organizations; the sidebar
+  switcher changes the active workspace through the NextAuth `update` trigger,
+  validated against `OrganizationMember` in the jwt callback.
 
 ### Security & reliability
 - `AuditLog` persists sensitive actions (integration + automation changes) via
