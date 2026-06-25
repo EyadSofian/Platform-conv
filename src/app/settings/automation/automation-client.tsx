@@ -14,9 +14,20 @@ type Trigger =
   | "NEW_MESSAGE"
   | "MESSAGE_KEYWORD"
   | "CHANNEL_IS"
-  | "TAG_ADDED";
+  | "TAG_ADDED"
+  | "NO_REPLY_AFTER"
+  | "OUTSIDE_BUSINESS_HOURS";
 
-type Action = "ADD_TAG" | "ASSIGN_AGENT" | "NOTIFY" | "CLOSE" | "SNOOZE" | "SEND_WEBHOOK";
+type Action =
+  | "ADD_TAG"
+  | "ASSIGN_AGENT"
+  | "NOTIFY"
+  | "CLOSE"
+  | "SNOOZE"
+  | "SEND_WEBHOOK"
+  | "SEND_TEMPLATE"
+  | "CREATE_LEAD"
+  | "HANDOFF_BOTPRESS";
 
 type Rule = {
   id: string;
@@ -37,6 +48,8 @@ const TRIGGERS: { value: Trigger; label: string }[] = [
   { value: "MESSAGE_KEYWORD", label: "Message contains keyword" },
   { value: "CHANNEL_IS", label: "Channel is…" },
   { value: "TAG_ADDED", label: "Tag added" },
+  { value: "NO_REPLY_AFTER", label: "No reply after… (time-based)" },
+  { value: "OUTSIDE_BUSINESS_HOURS", label: "Outside business hours (time-based)" },
 ];
 
 const ACTIONS: { value: Action; label: string }[] = [
@@ -46,12 +59,24 @@ const ACTIONS: { value: Action; label: string }[] = [
   { value: "CLOSE", label: "Close conversation" },
   { value: "SNOOZE", label: "Snooze" },
   { value: "SEND_WEBHOOK", label: "Send webhook" },
+  { value: "SEND_TEMPLATE", label: "Send WhatsApp template" },
+  { value: "CREATE_LEAD", label: "Create lead" },
+  { value: "HANDOFF_BOTPRESS", label: "Hand off to human (pause bot)" },
+];
+
+/** Triggers evaluated by the scheduler rather than on inbound events. */
+const TIME_BASED_TRIGGERS: Trigger[] = [
+  "NO_REPLY_AFTER",
+  "OUTSIDE_BUSINESS_HOURS",
 ];
 
 function triggerHint(trigger: Trigger): string {
   if (trigger === "MESSAGE_KEYWORD") return "Keywords (comma separated)";
   if (trigger === "CHANNEL_IS") return "Channel (e.g. WHATSAPP)";
   if (trigger === "TAG_ADDED") return "Tag (optional)";
+  if (trigger === "NO_REPLY_AFTER") return "Minutes with no reply (e.g. 60)";
+  if (trigger === "OUTSIDE_BUSINESS_HOURS")
+    return "Business hours as start-end (e.g. 09:00-17:00)";
   return "No configuration needed";
 }
 
@@ -61,6 +86,9 @@ function actionHint(action: Action): string {
   if (action === "NOTIFY") return "Message to show";
   if (action === "SNOOZE") return "Minutes";
   if (action === "SEND_WEBHOOK") return "Webhook URL";
+  if (action === "SEND_TEMPLATE") return "Approved template name";
+  if (action === "CREATE_LEAD") return "Lead tag (optional, default: lead)";
+  if (action === "HANDOFF_BOTPRESS") return "Handoff note (optional)";
   return "No configuration needed";
 }
 
@@ -70,6 +98,15 @@ function buildTriggerConfig(trigger: Trigger, value: string): Record<string, unk
   }
   if (trigger === "CHANNEL_IS") return { channel: value.trim().toUpperCase() };
   if (trigger === "TAG_ADDED") return value.trim() ? { tag: value.trim() } : {};
+  if (trigger === "NO_REPLY_AFTER") return { minutes: Number(value) || 60 };
+  if (trigger === "OUTSIDE_BUSINESS_HOURS") {
+    const [start, end] = value.split("-").map((s) => s.trim());
+    return {
+      start: start || "09:00",
+      end: end || "17:00",
+      timezone: "Africa/Cairo",
+    };
+  }
   return {};
 }
 
@@ -79,6 +116,11 @@ function buildActionConfig(action: Action, value: string): Record<string, unknow
   if (action === "NOTIFY") return { body: value.trim() };
   if (action === "SNOOZE") return { minutes: Number(value) || 60 };
   if (action === "SEND_WEBHOOK") return { url: value.trim() };
+  if (action === "SEND_TEMPLATE") return { templateName: value.trim() };
+  if (action === "CREATE_LEAD")
+    return value.trim() ? { tag: value.trim() } : {};
+  if (action === "HANDOFF_BOTPRESS")
+    return value.trim() ? { message: value.trim() } : {};
   return {};
 }
 
@@ -216,6 +258,12 @@ export function AutomationSettingsClient() {
               value={triggerValue}
               onChange={(e) => setTriggerValue(e.target.value)}
             />
+            {TIME_BASED_TRIGGERS.includes(trigger) && (
+              <p className="text-xs text-muted-foreground">
+                Evaluated by the scheduler (worker:scheduler or the cron route),
+                not on inbound messages.
+              </p>
+            )}
           </div>
           <div className="space-y-2">
             <label className="text-xs font-medium text-muted-foreground">Then</label>

@@ -1,7 +1,9 @@
 import { CampaignStatus } from "@prisma/client";
 import { apiError, handleRouteError, ok } from "@/lib/api";
+import { resolveOrganizationId } from "@/lib/org";
 import { prisma } from "@/lib/prisma";
 import { emitRealtime } from "@/lib/realtime";
+import { requireUser } from "@/lib/session";
 
 export const runtime = "nodejs";
 
@@ -10,6 +12,14 @@ export async function PATCH(
   { params }: { params: { id: string } },
 ) {
   try {
+    const user = await requireUser();
+    const organizationId = await resolveOrganizationId(user.organizationId);
+    const owned = await prisma.campaign.findFirst({
+      where: { id: params.id, organizationId },
+      select: { id: true },
+    });
+    if (!owned) return apiError("Campaign not found.", 404);
+
     const campaign = await prisma.campaign.update({
       where: { id: params.id },
       data: { status: CampaignStatus.SCHEDULED },
@@ -18,9 +28,6 @@ export async function PATCH(
     await emitRealtime({ type: "campaign.updated", payload: campaign });
     return ok(campaign);
   } catch (error) {
-    if (error instanceof Error && error.message.includes("Record to update")) {
-      return apiError("Campaign not found.", 404);
-    }
     return handleRouteError(error);
   }
 }

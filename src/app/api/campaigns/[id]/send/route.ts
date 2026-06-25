@@ -1,7 +1,9 @@
 import { CampaignStatus } from "@prisma/client";
 import { apiError, handleRouteError, ok } from "@/lib/api";
 import { enqueueCampaignSend } from "@/lib/campaign-queue";
+import { resolveOrganizationId } from "@/lib/org";
 import { prisma } from "@/lib/prisma";
+import { requireUser } from "@/lib/session";
 
 export const runtime = "nodejs";
 
@@ -10,8 +12,10 @@ export async function POST(
   { params }: { params: { id: string } },
 ) {
   try {
-    const campaign = await prisma.campaign.findUnique({
-      where: { id: params.id },
+    const user = await requireUser();
+    const organizationId = await resolveOrganizationId(user.organizationId);
+    const campaign = await prisma.campaign.findFirst({
+      where: { id: params.id, organizationId },
     });
 
     if (!campaign) return apiError("Campaign not found.", 404);
