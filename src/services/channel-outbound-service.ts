@@ -113,3 +113,73 @@ async function markFailed(messageId: string, reason: string) {
 export function contactUsesWhatsApp(contact: Pick<Contact, "channel">): boolean {
   return contact.channel === Channel.WHATSAPP;
 }
+
+const CHANNEL_TO_TYPE: Partial<Record<Channel, ChannelType>> = {
+  [Channel.TELEGRAM]: ChannelType.TELEGRAM,
+  [Channel.MESSENGER]: ChannelType.FACEBOOK_MESSENGER,
+  [Channel.INSTAGRAM]: ChannelType.INSTAGRAM,
+  [Channel.WEB]: ChannelType.WEBCHAT,
+};
+
+export function supportsDirectChannelDelivery(
+  contact: Pick<Contact, "channel">,
+): boolean {
+  return CHANNEL_TO_TYPE[contact.channel] !== undefined;
+}
+
+/**
+ * Delivers an agent reply to a non-WhatsApp channel (Telegram, Messenger,
+ * Instagram, Webchat) via its adapter, resolving the recipient from the stored
+ * channel identity. Webchat is realtime-only, so its adapter is a stored no-op.
+ */
+export async function deliverChannelReply(params: {
+  contact: Contact;
+  conversation: Conversation;
+  messageId: string;
+  content: string;
+}): Promise<DeliveryResult> {
+  const { contact, conversation, messageId, content } = params;
+  const type = CHANNEL_TO_TYPE[contact.channel];
+  if (!type) return { ok: false, skipped: true };
+
+  const account = await prisma.channelAccount.findFirst({
+    where: {
+      type,
+      ...(conversation.organizationId
+        ? { organizationId: conversation.organizationId }
+        : {}),
+    },
+    orderBy: { createdAt: "asc" },
+  });
+  const adapter = account
+    ? adapterFromAccount(account)
+    : getChannelAdapter(type);
+
+  const metadata = (contact.metadata ?? {}) as Record<string, unknown>;
+  const to =
+    (metadata.channelUserId as string) ?? contact.phone ?? contact.id;
+
+  const result = await adapter.sendMessage({
+    to,
+    type: MessageType.TEXT,
+    text: content,
+    metadata: { conversationId: metadata.channelConversationId ?? to },
+  });
+
+  if (result.skipped) {
+    return { ok: false, skipped: true, error: result.error };
+  }
+  if (!result.ok) {
+    await markFailed(messageId, result.error ?? "send_failed");
+    return { ok: false, error: result.error };
+  }
+  await prisma.message.update({
+    where: { id: messageId },
+    data: {
+      status: MessageStatus.SENT,
+      externalId: result.externalId ?? undefined,
+      channelAccountId: account?.id ?? undefined,
+    },
+  });
+  return { ok: true, externalId: result.externalId };
+}

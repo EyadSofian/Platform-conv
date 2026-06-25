@@ -59,6 +59,9 @@ export type AuditEvent =
   | "automation.rule.create"
   | "automation.rule.update"
   | "automation.rule.delete"
+  | "integration.create"
+  | "integration.update"
+  | "integration.delete"
   | "message.sent"
   | "botpress.test"
   | "user.signin";

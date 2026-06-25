@@ -12,6 +12,7 @@ enum Channel {
   WEB       @map("web")
   TELEGRAM  @map("telegram")
   MESSENGER @map("messenger")
+  INSTAGRAM @map("instagram")
 }
 
 // Broader channel taxonomy used by the channel-adapter architecture.
@@ -155,6 +156,21 @@ enum AutomationActionType {
   SNOOZE           @map("snooze")
 }
 
+enum IntegrationType {
+  ODOO     @map("odoo")
+  HUBSPOT  @map("hubspot")
+  SHOPIFY  @map("shopify")
+  ZAPIER   @map("zapier")
+  WEBHOOK  @map("webhook")
+  BOTPRESS @map("botpress")
+}
+
+enum IntegrationStatus {
+  CONNECTED    @map("connected")
+  DISCONNECTED @map("disconnected")
+  ERROR        @map("error")
+}
+
 // ---------------------------------------------------------------------------
 // Multi-tenancy
 // ---------------------------------------------------------------------------
@@ -176,6 +192,8 @@ model Organization {
   templates      WhatsAppTemplate[]
   webhookEvents  WebhookEvent[]
   automationRules AutomationRule[]
+  integrations   Integration[]
+  auditLogs      AuditLog[]
 }
 
 model OrganizationMember {
@@ -280,6 +298,47 @@ model AutomationRule {
 
   @@index([organizationId, enabled])
   @@index([trigger])
+}
+
+model Integration {
+  id             String            @id @default(cuid())
+  organizationId String
+  type           IntegrationType
+  name           String
+  enabled        Boolean           @default(true)
+  status         IntegrationStatus @default(DISCONNECTED)
+  // Non-secret settings (base URL, list ids). Secrets live in `credentials`.
+  config         Json?
+  credentials    Json?
+  // Event names this integration should receive outbound dispatches for.
+  events         String[]          @default([])
+  lastSyncAt     DateTime?
+  lastError      String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, type, name])
+  @@index([organizationId, type])
+}
+
+// Persistent audit trail for sensitive actions (RBAC changes, sends, automation
+// edits, integration changes, ...). Complements the structured console log.
+model AuditLog {
+  id             String   @id @default(cuid())
+  organizationId String?
+  actorId        String?
+  event          String
+  targetType     String?
+  targetId       String?
+  metadata       Json?
+  createdAt      DateTime @default(now())
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([event])
 }
 
 model User {

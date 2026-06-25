@@ -40,7 +40,7 @@ type FilterKey =
 
 type ConversationStatus = "BOT" | "HUMAN" | "CLOSED";
 
-type Channel = "WHATSAPP" | "WEB" | "TELEGRAM" | "MESSENGER";
+type Channel = "WHATSAPP" | "WEB" | "TELEGRAM" | "MESSENGER" | "INSTAGRAM";
 
 type MessageSender = "BOT" | "AGENT" | "CUSTOMER" | "SYSTEM";
 
@@ -123,6 +123,7 @@ const CHANNEL_LABEL: Record<Channel, string> = {
   WEB: "Webchat",
   TELEGRAM: "Telegram",
   MESSENGER: "Messenger",
+  INSTAGRAM: "Instagram",
 };
 
 const CHANNEL_BADGE_TONE: Record<Channel, "teal" | "slate" | "amber" | "blue"> = {
@@ -130,6 +131,7 @@ const CHANNEL_BADGE_TONE: Record<Channel, "teal" | "slate" | "amber" | "blue"> =
   WEB: "slate",
   TELEGRAM: "blue",
   MESSENGER: "blue",
+  INSTAGRAM: "amber",
 };
 
 function formatTime(iso?: string | null) {

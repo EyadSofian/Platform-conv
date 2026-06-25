@@ -7,6 +7,7 @@ import {
 import { prisma } from "../lib/prisma";
 import { emitRealtime } from "../lib/realtime";
 import { runAutomations } from "./automation-service";
+import { dispatchIntegrationEvent } from "./integration-service";
 import { recordMessage } from "./conversation-service";
 import type {
   NormalizedMessageEvent,
@@ -141,6 +142,14 @@ export async function ingestInboundMessage(params: {
     contact,
     conversation,
     message,
+  });
+
+  // Fan out to subscribed integrations (Zapier/webhooks/CRMs).
+  await dispatchIntegrationEvent(organizationId, "message.received", {
+    contactId: contact.id,
+    conversationId: conversation.id,
+    channel,
+    text: message.content,
   });
 
   return { duplicate: false, contact, message, conversation };

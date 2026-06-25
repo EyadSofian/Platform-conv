@@ -1,7 +1,10 @@
 import { ChannelType } from "@prisma/client";
 import type { ChannelAccount } from "@prisma/client";
 import { BotPressAdapter } from "./botpress";
+import { MetaMessagingAdapter } from "./meta-messaging";
+import { TelegramAdapter } from "./telegram";
 import type { ChannelAdapter, ChannelAdapterConfig } from "./types";
+import { WebchatAdapter } from "./webchat";
 import { WhatsAppCloudAdapter } from "./whatsapp-cloud";
 
 export * from "./types";
@@ -18,16 +21,16 @@ export function getChannelAdapter(
   switch (type) {
     case ChannelType.WHATSAPP_CLOUD:
       return new WhatsAppCloudAdapter(account);
+    case ChannelType.FACEBOOK_MESSENGER:
+      return new MetaMessagingAdapter(ChannelType.FACEBOOK_MESSENGER, account);
+    case ChannelType.INSTAGRAM:
+      return new MetaMessagingAdapter(ChannelType.INSTAGRAM, account);
+    case ChannelType.TELEGRAM:
+      return new TelegramAdapter(account);
+    case ChannelType.WEBCHAT:
+      return new WebchatAdapter(account);
     case ChannelType.BOTPRESS:
       return new BotPressAdapter(account);
-    // Skeletons for upcoming channels reuse the closest working adapter until
-    // their own implementation lands. They are intentionally explicit so the
-    // switch stays exhaustive.
-    case ChannelType.FACEBOOK_MESSENGER:
-    case ChannelType.INSTAGRAM:
-    case ChannelType.WEBCHAT:
-    case ChannelType.TELEGRAM:
-      throw new Error(`Channel adapter for ${type} is not implemented yet.`);
     default:
       throw new Error(`Unknown channel type: ${type as string}`);
   }
@@ -43,8 +46,15 @@ export function adapterFromAccount(account: ChannelAccount): ChannelAdapter {
   });
 }
 
+const IMPLEMENTED = new Set<ChannelType>([
+  ChannelType.WHATSAPP_CLOUD,
+  ChannelType.FACEBOOK_MESSENGER,
+  ChannelType.INSTAGRAM,
+  ChannelType.TELEGRAM,
+  ChannelType.WEBCHAT,
+  ChannelType.BOTPRESS,
+]);
+
 export function isImplementedChannel(type: ChannelType): boolean {
-  return (
-    type === ChannelType.WHATSAPP_CLOUD || type === ChannelType.BOTPRESS
-  );
+  return IMPLEMENTED.has(type);
 }

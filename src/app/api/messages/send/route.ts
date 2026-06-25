@@ -12,7 +12,9 @@ import { sendMessageSchema } from "@/lib/validators";
 import { recordMessage } from "@/services/conversation-service";
 import {
   contactUsesWhatsApp,
+  deliverChannelReply,
   deliverWhatsAppReply,
+  supportsDirectChannelDelivery,
 } from "@/services/channel-outbound-service";
 
 export const runtime = "nodejs";
@@ -62,6 +64,27 @@ export async function POST(request: Request) {
       });
 
       return ok({ message, conversation, whatsappDelivery });
+    }
+
+    // Direct delivery for Telegram / Messenger / Instagram / Webchat, unless the
+    // contact is BotPress-linked (BotPress path below keeps that integration).
+    if (
+      supportsDirectChannelDelivery(contact) &&
+      !(contact.botpressUserId && contact.botpressConvId)
+    ) {
+      const channelDelivery = await deliverChannelReply({
+        contact,
+        conversation,
+        messageId: message.id,
+        content: input.content,
+      });
+      recordAudit("message.sent", input.senderId ?? null, {
+        conversationId: conversation.id,
+        messageId: message.id,
+        channel: contact.channel.toLowerCase(),
+        delivered: channelDelivery.ok,
+      });
+      return ok({ message, conversation, channelDelivery });
     }
 
     let botpressDelivery: Awaited<ReturnType<typeof sendBotPressMessage>> | null =

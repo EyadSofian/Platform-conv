@@ -31,10 +31,18 @@ variables (keeping single-tenant `.env` setups working).
 - `WHATSAPP_CLOUD` — full adapter (`whatsapp-cloud.ts`): GET hub-challenge
   verification, `X-Hub-Signature-256` validation, inbound message + status
   normalization, text/template/media send, 24h service window.
+- `TELEGRAM` — `telegram.ts`: secret-token verification, update normalization,
+  bot `sendMessage`. Webhook at `/api/webhook/telegram`.
+- `FACEBOOK_MESSENGER` / `INSTAGRAM` — `meta-messaging.ts`: shared Graph Send
+  API + webhook envelope (hub-challenge + `X-Hub-Signature-256`, delivery/read
+  receipts). Webhooks at `/api/webhook/messenger` and `/api/webhook/instagram`.
+- `WEBCHAT` — `webchat.ts`: first-party widget; inbound at
+  `/api/webhook/webchat`, outbound delivered via realtime.
 - `BOTPRESS` — wraps the existing BotPress helpers (`botpress.ts`).
 
-Other channel types throw "not implemented yet" from the registry until their
-adapters land.
+All channels except WhatsApp share `handleWebhookIngest` /
+`handleWebhookVerification` (`webhook-handler.ts`), which stores the raw event,
+verifies the signature, and runs the normalized ingest pipeline.
 
 ## WhatsApp Cloud flow
 
@@ -98,3 +106,28 @@ and agent messages, and never sends them to the customer.
   `/api/automation-rules` (+ `/:id`) and the **Settings → Automation** page;
   editing requires ADMIN/SUPERVISOR. Failures are isolated per rule so a bad
   rule never blocks ingestion.
+
+## Reporting, integrations & reliability (Sprint 3)
+
+### Reporting
+- `buildReport` (`/api/reports?days=N`, org-scoped) returns channel mix, open vs
+  closed, **first-response** and **resolution** times, agent workload, campaign
+  delivery/read/reply rates, **WhatsApp template performance**, and contact
+  growth. The Reports page renders it live.
+
+### Integrations
+- `Integration` (org-scoped) pairs an `IntegrationType`
+  (ODOO/HUBSPOT/SHOPIFY/ZAPIER/WEBHOOK/BOTPRESS) with config + secret
+  credentials (never returned to the client — `redactIntegration`).
+- `dispatchIntegrationEvent(orgId, event, data)` fans platform events out to
+  enabled integrations subscribed to that event; ZAPIER/WEBHOOK perform an HTTP
+  POST, HubSpot/Shopify are scaffolded, Odoo keeps its dedicated service. Wired
+  to `message.received` on inbound ingest. Managed at `/api/integrations`
+  (ADMIN/SUPERVISOR), with per-integration error capture.
+
+### Security & reliability
+- `AuditLog` persists sensitive actions (integration + automation changes) via
+  `writeAudit`, alongside the structured console log.
+- `/api/health` now checks database connectivity and returns 503 when down.
+- Webhooks remain idempotent (raw `WebhookEvent` stored, deduped on the provider
+  message id) and signature-verified per channel.

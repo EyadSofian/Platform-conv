@@ -5,7 +5,7 @@ const upper = (value: unknown) =>
 
 export const channelSchema = z.preprocess(
   upper,
-  z.enum(["WHATSAPP", "WEB", "TELEGRAM", "MESSENGER"]),
+  z.enum(["WHATSAPP", "WEB", "TELEGRAM", "MESSENGER", "INSTAGRAM"]),
 );
 
 export const contactStatusSchema = z.preprocess(
@@ -181,6 +181,28 @@ export const automationRuleCreateSchema = z.object({
 });
 
 export const automationRuleUpdateSchema = automationRuleCreateSchema.partial();
+
+export const integrationTypeSchema = z.preprocess(
+  upper,
+  z.enum(["ODOO", "HUBSPOT", "SHOPIFY", "ZAPIER", "WEBHOOK", "BOTPRESS"]),
+);
+
+export const integrationCreateSchema = z.object({
+  type: integrationTypeSchema,
+  name: z.string().trim().min(1),
+  enabled: z.boolean().default(true),
+  config: z.record(z.string(), z.unknown()).optional(),
+  credentials: z.record(z.string(), z.unknown()).optional(),
+  events: z.array(z.string()).default([]),
+});
+
+export const integrationUpdateSchema = z.object({
+  name: z.string().trim().min(1).optional(),
+  enabled: z.boolean().optional(),
+  config: z.record(z.string(), z.unknown()).optional(),
+  credentials: z.record(z.string(), z.unknown()).optional(),
+  events: z.array(z.string()).optional(),
+});
 
 export const botpressWebhookSchema = z.object({
   event: z.string().optional(),

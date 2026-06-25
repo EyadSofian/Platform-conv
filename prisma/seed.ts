@@ -184,6 +184,26 @@ async function main() {
     },
   });
 
+  // Example outbound webhook integration (disabled until a URL is set).
+  await prisma.integration.upsert({
+    where: {
+      organizationId_type_name: {
+        organizationId: organization.id,
+        type: "ZAPIER",
+        name: "Zapier — new messages",
+      },
+    },
+    update: {},
+    create: {
+      organizationId: organization.id,
+      type: "ZAPIER",
+      name: "Zapier — new messages",
+      enabled: false,
+      config: { url: "" },
+      events: ["message.received"],
+    },
+  });
+
   // Example automation: tag conversations that mention pricing.
   await prisma.automationRule.upsert({
     where: { id: "demo-rule-pricing" },
