@@ -10,6 +10,7 @@ import {
   ChannelType,
   ContactStatus,
   ConversationStatus,
+  InboxStatus,
   MessageSender,
   OrgRole,
   UserRole,
@@ -65,13 +66,39 @@ async function main() {
     create: { organizationId: organization.id, userId: agent.id, role: OrgRole.AGENT },
   });
 
+  const whatsappInbox = await prisma.inbox.upsert({
+    where: { id: "demo-whatsapp-inbox" },
+    update: {
+      organizationId: organization.id,
+      defaultAssigneeId: agent.id,
+    },
+    create: {
+      id: "demo-whatsapp-inbox",
+      organizationId: organization.id,
+      name: "Sales WhatsApp",
+      description: "Primary WhatsApp inbox for sales, AI suggestions, and takeover.",
+      channelType: ChannelType.WHATSAPP_CLOUD,
+      status: InboxStatus.ACTIVE,
+      botEnabled: true,
+      aiEnabled: true,
+      defaultAssigneeId: agent.id,
+      businessHours: {
+        timezone: "Africa/Cairo",
+        weekdays: ["sun", "mon", "tue", "wed", "thu"],
+        from: "09:00",
+        to: "18:00",
+      },
+    },
+  });
+
   // Example WhatsApp Cloud channel account (credentials come from env at runtime).
   await prisma.channelAccount.upsert({
     where: { id: "demo-whatsapp-account" },
-    update: {},
+    update: { inboxId: whatsappInbox.id },
     create: {
       id: "demo-whatsapp-account",
       organizationId: organization.id,
+      inboxId: whatsappInbox.id,
       type: ChannelType.WHATSAPP_CLOUD,
       name: "Primary WhatsApp",
       status: ChannelHealthStatus.MISSING_CONFIG,
@@ -102,10 +129,16 @@ async function main() {
 
   await prisma.conversation.upsert({
     where: { contactId: contact.id },
-    update: { organizationId: organization.id },
+    update: {
+      organizationId: organization.id,
+      inboxId: whatsappInbox.id,
+      channelAccountId: "demo-whatsapp-account",
+    },
     create: {
       contactId: contact.id,
       organizationId: organization.id,
+      inboxId: whatsappInbox.id,
+      channelAccountId: "demo-whatsapp-account",
       status: ConversationStatus.HUMAN,
       assignedAgentId: agent.id,
       unreadCount: 2,

@@ -8,6 +8,23 @@ export const channelSchema = z.preprocess(
   z.enum(["WHATSAPP", "WEB", "TELEGRAM", "MESSENGER", "INSTAGRAM"]),
 );
 
+export const channelTypeSchema = z.preprocess(
+  upper,
+  z.enum([
+    "WHATSAPP_CLOUD",
+    "FACEBOOK_MESSENGER",
+    "INSTAGRAM",
+    "WEBCHAT",
+    "TELEGRAM",
+    "BOTPRESS",
+  ]),
+);
+
+export const inboxStatusSchema = z.preprocess(
+  upper,
+  z.enum(["ACTIVE", "PAUSED", "DISCONNECTED"]),
+);
+
 export const contactStatusSchema = z.preprocess(
   upper,
   z.enum(["ACTIVE", "CLOSED", "PENDING"]),
@@ -61,6 +78,38 @@ export const contactCreateSchema = z.object({
 });
 
 export const contactUpdateSchema = contactCreateSchema.partial();
+
+const emptyToNull = (value: unknown) =>
+  typeof value === "string" && value.trim() === "" ? null : value;
+
+const optionalSecretString = z.preprocess(
+  emptyToNull,
+  z.string().trim().min(1).optional().nullable(),
+);
+
+export const inboxConnectionSchema = z.object({
+  externalId: optionalSecretString,
+  phoneNumberId: optionalSecretString,
+  businessAccountId: optionalSecretString,
+  pageId: optionalSecretString,
+  instagramAccountId: optionalSecretString,
+  webhookVerifyToken: optionalSecretString,
+  accessToken: optionalSecretString,
+});
+
+export const inboxCreateSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  description: z.string().trim().max(240).optional().nullable(),
+  channelType: channelTypeSchema.default("WHATSAPP_CLOUD"),
+  status: inboxStatusSchema.default("DISCONNECTED"),
+  botEnabled: z.boolean().default(true),
+  aiEnabled: z.boolean().default(true),
+  defaultAssigneeId: z.string().trim().optional().nullable(),
+  businessHours: z.record(z.string(), z.unknown()).optional(),
+  connection: inboxConnectionSchema.partial().optional(),
+});
+
+export const inboxUpdateSchema = inboxCreateSchema.partial();
 
 export const sendMessageSchema = z.object({
   contactId: z.string().min(1),

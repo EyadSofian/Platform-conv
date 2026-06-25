@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   CheckCheck,
   Check,
+  Clock3,
   CirclePause,
   FilePlus2,
   ImageIcon,
@@ -15,6 +16,7 @@ import {
   Paperclip,
   RefreshCw,
   Send,
+  Sparkles,
   Tag,
   UserPlus,
   UserRound,
@@ -36,6 +38,7 @@ type FilterKey =
   | "mine"
   | "whatsapp"
   | "messenger"
+  | "instagram"
   | "telegram";
 
 type ConversationStatus = "BOT" | "HUMAN" | "CLOSED";
@@ -64,6 +67,14 @@ type Conversation = {
   unreadCount: number;
   closedAt: string | null;
   contact: Contact;
+  inbox?: {
+    id: string;
+    name: string;
+    channelType: string;
+    status: string;
+    botEnabled: boolean;
+    aiEnabled: boolean;
+  } | null;
   assignedAgent: {
     id: string;
     name: string | null;
@@ -96,6 +107,14 @@ type TimelineItem =
   | { kind: "message"; at: number; message: Message }
   | { kind: "note"; at: number; note: Note };
 
+type AiAssistance = {
+  summary: string;
+  sentiment: "positive" | "neutral" | "negative";
+  urgency: "low" | "medium" | "high";
+  suggestedReplies: string[];
+  suggestedTags: string[];
+};
+
 type SessionResponse = {
   user?: { id?: string; name?: string | null; email?: string | null };
 };
@@ -109,12 +128,14 @@ const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "closed", label: "Closed" },
   { key: "whatsapp", label: "WhatsApp" },
   { key: "messenger", label: "Messenger" },
+  { key: "instagram", label: "Instagram" },
   { key: "telegram", label: "Telegram" },
 ];
 
 const CHANNEL_FILTER_KEYS: Partial<Record<FilterKey, Channel>> = {
   whatsapp: "WHATSAPP",
   messenger: "MESSENGER",
+  instagram: "INSTAGRAM",
   telegram: "TELEGRAM",
 };
 
@@ -251,6 +272,8 @@ export function InboxClient() {
   const [draft, setDraft] = useState("");
   const [composerMode, setComposerMode] = useState<"reply" | "note">("reply");
   const [sending, setSending] = useState(false);
+  const [aiAssistance, setAiAssistance] = useState<AiAssistance | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
   const [actionPending, setActionPending] = useState<
     "takeover" | "resume" | "close" | "assign" | null
   >(null);
@@ -324,6 +347,7 @@ export function InboxClient() {
     if (!activeId) {
       setMessages([]);
       setNotes([]);
+      setAiAssistance(null);
       return;
     }
     const controller = new AbortController();
@@ -362,6 +386,32 @@ export function InboxClient() {
     return () => controller.abort();
   }, [activeId]);
 
+  useEffect(() => {
+    if (!activeId) return;
+    const controller = new AbortController();
+    setAiLoading(true);
+    fetch(`/api/ai/conversations/${activeId}/suggestions`, {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        const json = (await response.json()) as { data: AiAssistance };
+        return json.data;
+      })
+      .then((assistance) => {
+        if (assistance) setAiAssistance(assistance);
+      })
+      .catch((error) => {
+        if ((error as Error).name !== "AbortError") {
+          setAiAssistance(null);
+        }
+      })
+      .finally(() => setAiLoading(false));
+
+    return () => controller.abort();
+  }, [activeId]);
+
   const timeline = useMemo<TimelineItem[]>(() => {
     const items: TimelineItem[] = [
       ...messages.map((message) => ({
@@ -378,6 +428,51 @@ export function InboxClient() {
     items.sort((a, b) => a.at - b.at);
     return items;
   }, [messages, notes]);
+
+  const latestCustomerMessage = useMemo(
+    () =>
+      [...messages]
+        .reverse()
+        .find((message) => message.sender === "CUSTOMER" && message.content),
+    [messages],
+  );
+
+  const replySuggestions = useMemo(() => {
+    const text = latestCustomerMessage?.content.toLowerCase() ?? "";
+    const name =
+      activeConversation?.contact.name?.split(" ")[0] ??
+      activeConversation?.contact.phone ??
+      "there";
+
+    if (text.includes("price") || text.includes("pricing") || text.includes("cost")) {
+      return [
+        `Hi ${name}, I can walk you through the plans and recommend the best fit for your volume.`,
+        "Would you like monthly pricing or a quick demo first?",
+      ];
+    }
+
+    if (text.includes("demo") || text.includes("call")) {
+      return [
+        `Absolutely ${name}. I can help schedule a short walkthrough with the right specialist.`,
+        "What time today works best for a 15-minute demo?",
+      ];
+    }
+
+    return [
+      `Thanks ${name}. I am checking this now and will help you from here.`,
+      "Can you share one more detail so I can route this correctly?",
+    ];
+  }, [activeConversation, latestCustomerMessage]);
+
+  const displayedSuggestions =
+    aiAssistance?.suggestedReplies?.length
+      ? aiAssistance.suggestedReplies
+      : replySuggestions;
+
+  function applySuggestion(text: string) {
+    setComposerMode("reply");
+    setDraft(text);
+  }
 
   useEffect(() => {
     if (!scrollRef.current) return;
@@ -601,12 +696,12 @@ export function InboxClient() {
   const status = activeConversation?.status ?? "BOT";
 
   return (
-    <div className="grid h-[calc(100vh-7.5rem)] min-h-[680px] overflow-hidden rounded-lg border bg-card lg:grid-cols-[360px_minmax(0,1fr)]">
+    <div className="grid h-[calc(100vh-7.5rem)] min-h-[680px] overflow-hidden rounded-lg border bg-card lg:grid-cols-[340px_minmax(0,1fr)] xl:grid-cols-[340px_minmax(0,1fr)_320px]">
       <aside className="flex min-h-0 flex-col border-b lg:border-b-0 lg:border-r">
         <div className="border-b p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h2 className="font-semibold">Live Inbox</h2>
+              <h2 className="font-semibold">Conversation inbox</h2>
               <p className="text-sm text-muted-foreground">
                 {connected ? "Receiving live updates" : "Socket reconnecting"}
               </p>
@@ -661,8 +756,8 @@ export function InboxClient() {
           )}
           {!listLoading && !listError && conversations.length === 0 && (
             <div className="m-4 rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-              No conversations match this filter yet. BotPress conversations
-              will appear here as soon as they start.
+              No conversations match this filter yet. Connected channel
+              conversations will appear here as soon as they start.
             </div>
           )}
           {conversations.map((conversation) => {
@@ -724,9 +819,14 @@ export function InboxClient() {
                       <Badge tone={CHANNEL_BADGE_TONE[contact.channel] ?? "slate"}>
                         {CHANNEL_LABEL[contact.channel] ?? contact.channel}
                       </Badge>
+                      {conversation.inbox?.name && (
+                        <span className="max-w-[150px] truncate text-xs text-muted-foreground">
+                          {conversation.inbox.name}
+                        </span>
+                      )}
                       {conversation.assignedAgent?.name && (
                         <span className="text-xs text-muted-foreground">
-                          · {conversation.assignedAgent.name}
+                          / {conversation.assignedAgent.name}
                         </span>
                       )}
                     </div>
@@ -754,8 +854,8 @@ export function InboxClient() {
                         "Unknown contact"}
                     </h2>
                     <p className="truncate text-sm text-muted-foreground">
-                      {activeConversation.contact.phone ?? "—"} ·{" "}
-                      {activeConversation.contact.email ?? "—"} ·{" "}
+                      {activeConversation.contact.phone ?? "-"} /{" "}
+                      {activeConversation.contact.email ?? "-"} /{" "}
                       {CHANNEL_LABEL[activeConversation.contact.channel] ??
                         activeConversation.contact.channel}
                     </p>
@@ -829,7 +929,7 @@ export function InboxClient() {
                       status !== "HUMAN" || actionPending !== null
                     }
                     onClick={() => void runControl("resume")}
-                    title="Resume BotPress bot"
+                    title="Resume bot"
                   >
                     {actionPending === "resume" ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -901,7 +1001,7 @@ export function InboxClient() {
                             <span>Private note</span>
                             {note.author?.name && (
                               <span className="font-normal">
-                                · {note.author.name}
+                                / {note.author.name}
                               </span>
                             )}
                             <span className="font-normal">
@@ -1063,11 +1163,234 @@ export function InboxClient() {
         ) : (
           <div className="flex items-center justify-center p-10 text-sm text-muted-foreground">
             {listLoading
-              ? "Loading inbox…"
+              ? "Loading inbox..."
               : "Select a conversation to start replying."}
           </div>
         )}
       </section>
+
+      <aside className="hidden min-h-0 flex-col border-l bg-card xl:flex">
+        <div className="border-b p-4">
+          <h2 className="font-semibold">Context and AI</h2>
+          <p className="text-sm text-muted-foreground">
+            Customer profile, routing state, and reply assistance.
+          </p>
+        </div>
+        {activeConversation ? (
+          <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4 scrollbar-thin">
+            <section className="rounded-md border p-4">
+              <div className="flex items-start gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-slate-900 font-semibold text-white">
+                  {initials(
+                    activeConversation.contact.name ??
+                      activeConversation.contact.phone ??
+                      "?",
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <h3 className="truncate font-semibold">
+                    {activeConversation.contact.name ??
+                      activeConversation.contact.phone ??
+                      "Unknown contact"}
+                  </h3>
+                  <p className="truncate text-sm text-muted-foreground">
+                    {activeConversation.contact.email ??
+                      activeConversation.contact.phone ??
+                      "No identity details"}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-3 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground">Channel</span>
+                  <Badge
+                    tone={CHANNEL_BADGE_TONE[activeConversation.contact.channel]}
+                  >
+                    {CHANNEL_LABEL[activeConversation.contact.channel]}
+                  </Badge>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground">Inbox</span>
+                  <span className="truncate font-medium">
+                    {activeConversation.inbox?.name ?? "Unassigned inbox"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground">Agent</span>
+                  <span className="truncate font-medium">
+                    {activeConversation.assignedAgent?.name ??
+                      activeConversation.assignedAgent?.email ??
+                      "Unassigned"}
+                  </span>
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-md border p-4">
+              <div className="mb-3 flex items-center gap-2">
+                <Bot className="h-4 w-4 text-teal-700" />
+                <h3 className="font-semibold">Bot control</h3>
+              </div>
+              <div className="space-y-3 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground">Conversation</span>
+                  <Badge
+                    tone={
+                      status === "BOT"
+                        ? "teal"
+                        : status === "HUMAN"
+                          ? "amber"
+                          : "slate"
+                    }
+                  >
+                    {status === "BOT"
+                      ? "Bot active"
+                      : status === "HUMAN"
+                        ? "Human takeover"
+                        : "Closed"}
+                  </Badge>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground">Inbox default</span>
+                  <Badge
+                    tone={activeConversation.inbox?.botEnabled ? "teal" : "slate"}
+                  >
+                    {activeConversation.inbox?.botEnabled === false
+                      ? "Bot off"
+                      : "Bot on"}
+                  </Badge>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground">AI assistant</span>
+                  <Badge
+                    tone={
+                      activeConversation.inbox?.aiEnabled === false
+                        ? "slate"
+                        : "teal"
+                    }
+                  >
+                    {activeConversation.inbox?.aiEnabled === false
+                      ? "Disabled"
+                      : "Enabled"}
+                  </Badge>
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-md border p-4">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-teal-700" />
+                  <h3 className="font-semibold">AI suggestions</h3>
+                </div>
+                {aiLoading && (
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                )}
+              </div>
+              <div className="rounded-md bg-slate-50 p-3 text-sm leading-6 text-muted-foreground">
+                {aiAssistance?.summary ??
+                  (latestCustomerMessage
+                    ? `Latest customer intent: "${latestCustomerMessage.content.slice(
+                        0,
+                        120,
+                      )}${latestCustomerMessage.content.length > 120 ? "..." : ""}"`
+                    : "No customer message to summarize yet.")}
+              </div>
+              {aiAssistance && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Badge
+                    tone={
+                      aiAssistance.urgency === "high"
+                        ? "red"
+                        : aiAssistance.urgency === "medium"
+                          ? "amber"
+                          : "slate"
+                    }
+                  >
+                    {aiAssistance.urgency} urgency
+                  </Badge>
+                  <Badge
+                    tone={
+                      aiAssistance.sentiment === "negative"
+                        ? "red"
+                        : aiAssistance.sentiment === "positive"
+                          ? "teal"
+                          : "slate"
+                    }
+                  >
+                    {aiAssistance.sentiment}
+                  </Badge>
+                  {aiAssistance.suggestedTags.map((tag) => (
+                    <Badge key={tag} tone="blue">
+                      {tag}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+              <div className="mt-3 space-y-2">
+                {displayedSuggestions.map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    type="button"
+                    onClick={() => applySuggestion(suggestion)}
+                    className="w-full rounded-md border bg-card p-3 text-left text-sm leading-6 transition hover:bg-muted"
+                  >
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section className="rounded-md border p-4">
+              <div className="mb-3 flex items-center gap-2">
+                <Clock3 className="h-4 w-4 text-teal-700" />
+                <h3 className="font-semibold">Conversation health</h3>
+              </div>
+              <div className="space-y-3 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground">Unread</span>
+                  <span className="font-semibold">
+                    {activeConversation.unreadCount}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground">Last message</span>
+                  <span className="font-medium">
+                    {activeConversation.lastMessageAt
+                      ? new Date(
+                          activeConversation.lastMessageAt,
+                        ).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
+                      : "No messages"}
+                  </span>
+                </div>
+              </div>
+            </section>
+
+            {activeConversation.contact.tags.length > 0 && (
+              <section className="rounded-md border p-4">
+                <div className="mb-3 flex items-center gap-2">
+                  <Tag className="h-4 w-4 text-teal-700" />
+                  <h3 className="font-semibold">Tags</h3>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {activeConversation.contact.tags.map((tag) => (
+                    <Badge key={tag} tone="slate">
+                      {tag}
+                    </Badge>
+                  ))}
+                </div>
+              </section>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-muted-foreground">
+            Select a conversation to see customer context and AI assistance.
+          </div>
+        )}
+      </aside>
     </div>
   );
 }

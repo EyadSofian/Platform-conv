@@ -10,6 +10,7 @@ import {
   UserRole,
 } from "@prisma/client";
 import { prisma } from "../lib/prisma";
+import { getFallbackOrganizationId } from "../lib/org";
 import { emitRealtime } from "../lib/realtime";
 import type { NormalizedBotPressWebhook } from "../types/platform";
 
@@ -66,6 +67,7 @@ export async function findContactByBotPress(
 export async function upsertBotPressContact(
   webhook: NormalizedBotPressWebhook,
 ) {
+  const organizationId = await getFallbackOrganizationId();
   const existing = await findContactByBotPress(
     webhook.userId,
     webhook.conversationId,
@@ -75,6 +77,7 @@ export async function upsertBotPressContact(
     ? await prisma.contact.update({
         where: { id: existing.id },
         data: {
+          organizationId: existing.organizationId ?? organizationId,
           botpressUserId: webhook.userId || existing.botpressUserId,
           botpressConvId: webhook.conversationId || existing.botpressConvId,
           channel: webhook.channel,
@@ -89,6 +92,7 @@ export async function upsertBotPressContact(
       })
     : await prisma.contact.create({
         data: {
+          organizationId,
           botpressUserId: webhook.userId || null,
           botpressConvId: webhook.conversationId || null,
           channel: webhook.channel,
@@ -131,8 +135,17 @@ async function ensureConversationForContactReturning(contactId: string) {
     return { created: false, conversation: conversation! };
   }
 
+  const contact = await prisma.contact.findUnique({
+    where: { id: contactId },
+    select: { organizationId: true },
+  });
+
   const conversation = await prisma.conversation.create({
-    data: { contactId, status: ConversationStatus.BOT },
+    data: {
+      contactId,
+      status: ConversationStatus.BOT,
+      organizationId: contact?.organizationId ?? undefined,
+    },
     include: {
       contact: true,
       assignedAgent: {
@@ -194,6 +207,15 @@ export async function recordMessage(input: {
 }) {
   const now = new Date();
   const isCustomer = input.sender === MessageSender.CUSTOMER;
+  const channelAccount = input.channelAccountId
+    ? await prisma.channelAccount.findUnique({
+        where: { id: input.channelAccountId },
+        select: { inboxId: true, organizationId: true },
+      })
+    : null;
+  const organizationId =
+    input.organizationId ?? channelAccount?.organizationId ?? undefined;
+  const inboxId = channelAccount?.inboxId ?? undefined;
 
   const result = await prisma.$transaction(async (tx) => {
     const message = await tx.message.create({
@@ -205,7 +227,7 @@ export async function recordMessage(input: {
         type: input.type ?? (input.isNote ? MessageType.NOTE : MessageType.TEXT),
         isNote: input.isNote ?? false,
         botpressMessageId: input.botpressMessageId,
-        organizationId: input.organizationId ?? undefined,
+        organizationId,
         channelAccountId: input.channelAccountId ?? undefined,
         externalId: input.externalId ?? undefined,
         status: input.status ?? undefined,
@@ -219,7 +241,8 @@ export async function recordMessage(input: {
       create: {
         contactId: input.contactId,
         status: ConversationStatus.BOT,
-        organizationId: input.organizationId ?? undefined,
+        organizationId,
+        inboxId,
         channelAccountId: input.channelAccountId ?? undefined,
         lastMessageAt: now,
         lastCustomerMessageAt: isCustomer ? now : undefined,
@@ -228,12 +251,23 @@ export async function recordMessage(input: {
       update: {
         lastMessageAt: now,
         lastCustomerMessageAt: isCustomer ? now : undefined,
-        organizationId: input.organizationId ?? undefined,
+        organizationId,
+        inboxId,
         channelAccountId: input.channelAccountId ?? undefined,
         unreadCount: isCustomer ? { increment: 1 } : undefined,
       },
       include: {
         contact: true,
+        inbox: {
+          select: {
+            id: true,
+            name: true,
+            channelType: true,
+            status: true,
+            botEnabled: true,
+            aiEnabled: true,
+          },
+        },
         assignedAgent: {
           select: { id: true, name: true, email: true, availability: true },
         },
@@ -337,15 +371,19 @@ export async function getConversationWithMessages(
 }
 
 export async function listConversations(filters: {
+  organizationId?: string;
   status?: string;
   agentId?: string;
   tag?: string;
   channel?: string;
   q?: string;
   unassigned?: boolean;
+  inboxId?: string;
 }) {
   return prisma.conversation.findMany({
     where: {
+      organizationId: filters.organizationId,
+      inboxId: filters.inboxId,
       status: filters.status
         ? (filters.status.toUpperCase() as ConversationStatus)
         : undefined,
@@ -368,6 +406,16 @@ export async function listConversations(filters: {
     },
     include: {
       contact: true,
+      inbox: {
+        select: {
+          id: true,
+          name: true,
+          channelType: true,
+          status: true,
+          botEnabled: true,
+          aiEnabled: true,
+        },
+      },
       assignedAgent: {
         select: { id: true, name: true, email: true, availability: true },
       },

@@ -6,11 +6,14 @@ import { signOut, useSession } from "next-auth/react";
 import {
   BarChart3,
   Bot,
+  BrainCircuit,
   ContactRound,
+  GitBranch,
   Inbox,
   LayoutDashboard,
   LogOut,
   Megaphone,
+  MessageSquareText,
   Settings,
   ShieldCheck,
   UsersRound,
@@ -20,12 +23,21 @@ import { WorkspaceSwitcher } from "@/components/app/workspace-switcher";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/inbox", label: "Inbox", icon: Inbox },
+  { href: "/inbox", label: "Conversations", icon: MessageSquareText },
+  { href: "/inboxes", label: "Inboxes", icon: Inbox },
   { href: "/contacts", label: "Contacts", icon: ContactRound },
   { href: "/campaigns", label: "Campaigns", icon: Megaphone },
+  { href: "/settings/automation", label: "Automations", icon: GitBranch },
+  { href: "/settings/ai-actions", label: "AI Settings", icon: BrainCircuit },
   { href: "/reports", label: "Reports", icon: BarChart3 },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
+
+function isNavActive(pathname: string | null, href: string) {
+  if (!pathname) return false;
+  if (href === "/settings") return pathname === href;
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -43,8 +55,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Bot className="h-5 w-5" />
           </div>
           <div>
-            <p className="text-sm font-semibold">SalesOps Console</p>
-            <p className="text-xs text-slate-400">BotPress handoff hub</p>
+            <p className="text-sm font-semibold">ConvDesk</p>
+            <p className="text-xs text-slate-400">AI omnichannel inbox</p>
           </div>
         </div>
         <div className="px-3 pt-3">
@@ -52,8 +64,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
         <nav className="space-y-1 px-3 py-4">
           {navItems.map((item) => {
-            const active =
-              pathname === item.href || pathname.startsWith(`${item.href}/`);
+            const active = isNavActive(pathname, item.href);
             const Icon = item.icon;
             return (
               <Link
@@ -73,10 +84,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="absolute bottom-4 left-3 right-3 rounded-lg border border-white/10 bg-white/5 p-3">
           <div className="flex items-center gap-2 text-sm font-medium">
             <ShieldCheck className="h-4 w-4 text-teal-300" />
-            Human handoff ready
+            Platform-owned routing
           </div>
           <p className="mt-1 text-xs leading-5 text-slate-400">
-            Webhook, actions, campaigns, and live updates are wired.
+            Inboxes, AI assistance, bot controls, campaigns, and live updates.
           </p>
         </div>
       </aside>
@@ -84,11 +95,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b bg-card/95 px-4 backdrop-blur lg:px-8">
           <div className="min-w-0">
             <p className="truncate text-sm font-medium text-muted-foreground">
-              AI-assisted sales workspace
+              AI-native conversation operations
             </p>
             <h1 className="truncate text-lg font-semibold">
-              {navItems.find((item) => pathname.startsWith(item.href))?.label ??
-                "Dashboard"}
+              {navItems.find((item) => isNavActive(pathname, item.href))
+                ?.label ?? "Dashboard"}
             </h1>
           </div>
           <div className="flex items-center gap-3">
@@ -124,8 +135,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </header>
         <nav className="flex gap-2 overflow-x-auto border-b bg-card px-4 py-2 lg:hidden">
           {navItems.map((item) => {
-            const active =
-              pathname === item.href || pathname.startsWith(`${item.href}/`);
+            const active = isNavActive(pathname, item.href);
             const Icon = item.icon;
             return (
               <Link

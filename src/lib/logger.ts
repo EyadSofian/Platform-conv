@@ -54,6 +54,8 @@ export type AuditEvent =
   | "conversation.close"
   | "conversation.assign"
   | "conversation.note"
+  | "inbox.create"
+  | "inbox.update"
   | "whatsapp.inbound"
   | "whatsapp.status"
   | "automation.rule.create"

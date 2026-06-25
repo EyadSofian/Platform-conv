@@ -42,6 +42,12 @@ enum ChannelHealthStatus {
   DISCONNECTED    @map("disconnected")
 }
 
+enum InboxStatus {
+  ACTIVE       @map("active")
+  PAUSED       @map("paused")
+  DISCONNECTED @map("disconnected")
+}
+
 enum MessageStatus {
   PENDING   @map("pending")
   SENT      @map("sent")
@@ -183,6 +189,7 @@ model Organization {
   updatedAt DateTime @updatedAt
 
   members        OrganizationMember[]
+  inboxes        Inbox[]
   channelAccounts ChannelAccount[]
   contacts       Contact[]
   conversations  Conversation[]
@@ -211,9 +218,34 @@ model OrganizationMember {
   @@index([userId])
 }
 
+model Inbox {
+  id                String      @id @default(cuid())
+  organizationId    String
+  name              String
+  description       String?
+  channelType       ChannelType
+  status            InboxStatus @default(DISCONNECTED)
+  botEnabled        Boolean     @default(true)
+  aiEnabled         Boolean     @default(true)
+  defaultAssigneeId String?
+  businessHours     Json?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  organization      Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  defaultAssignee   User?            @relation("DefaultInboxAssignee", fields: [defaultAssigneeId], references: [id], onDelete: SetNull)
+  channelConnection ChannelAccount?
+  conversations     Conversation[]
+
+  @@index([organizationId, status])
+  @@index([organizationId, channelType])
+  @@index([defaultAssigneeId])
+}
+
 model ChannelAccount {
   id                 String              @id @default(cuid())
   organizationId     String
+  inboxId            String?             @unique
   type               ChannelType
   name               String
   status             ChannelHealthStatus @default(MISSING_CONFIG)
@@ -233,6 +265,7 @@ model ChannelAccount {
   updatedAt          DateTime            @updatedAt
 
   organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  inbox         Inbox?         @relation(fields: [inboxId], references: [id], onDelete: SetNull)
   conversations Conversation[]
   messages      Message[]
 
@@ -359,6 +392,7 @@ model User {
   memberships           OrganizationMember[]
   assignedContacts      Contact[]          @relation("AssignedContacts")
   assignedConversations Conversation[]     @relation("AssignedConversations")
+  defaultInboxes        Inbox[]            @relation("DefaultInboxAssignee")
   sentMessages          Message[]          @relation("AgentMessages")
   authoredNotes         ConversationNote[] @relation("AuthoredNotes")
   campaigns             Campaign[]         @relation("CampaignCreator")
@@ -444,6 +478,7 @@ model Message {
 model Conversation {
   id                    String             @id @default(cuid())
   organizationId        String?
+  inboxId               String?
   channelAccountId      String?
   contactId             String             @unique
   status                ConversationStatus @default(BOT)
@@ -457,12 +492,14 @@ model Conversation {
   updatedAt             DateTime           @updatedAt
 
   organization   Organization?      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  inbox          Inbox?             @relation(fields: [inboxId], references: [id], onDelete: SetNull)
   channelAccount ChannelAccount?    @relation(fields: [channelAccountId], references: [id], onDelete: SetNull)
   contact        Contact            @relation(fields: [contactId], references: [id], onDelete: Cascade)
   assignedAgent  User?              @relation("AssignedConversations", fields: [assignedAgentId], references: [id], onDelete: SetNull)
   notes          ConversationNote[]
 
   @@index([organizationId, status])
+  @@index([organizationId, inboxId])
   @@index([status])
   @@index([assignedAgentId])
   @@index([lastMessageAt])
