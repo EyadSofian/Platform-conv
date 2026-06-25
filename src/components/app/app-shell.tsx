@@ -48,21 +48,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <aside className="fixed inset-y-0 left-0 z-20 hidden w-64 border-r bg-slate-950 text-white lg:block">
-        <div className="flex h-16 items-center gap-3 border-b border-white/10 px-5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-teal-500 text-white">
+    <div className="min-h-screen bg-background text-foreground selection:bg-primary/30">
+      <div className="fixed inset-0 -z-10 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-primary/20 via-background to-background"></div>
+      <aside className="fixed inset-y-0 left-0 z-20 hidden w-64 border-r border-white/5 bg-black/40 backdrop-blur-xl text-slate-200 lg:block">
+        <div className="flex h-16 items-center gap-3 border-b border-white/5 px-5">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-purple-600 text-white shadow-glow">
             <Bot className="h-5 w-5" />
           </div>
           <div>
-            <p className="text-sm font-semibold">ConvDesk</p>
-            <p className="text-xs text-slate-400">AI omnichannel inbox</p>
+            <p className="text-base font-bold text-gradient">ConvDesk</p>
+            <p className="text-xs text-slate-400 font-medium">AI omnichannel inbox</p>
           </div>
         </div>
-        <div className="px-3 pt-3">
+        <div className="px-3 pt-4">
           <WorkspaceSwitcher />
         </div>
-        <nav className="space-y-1 px-3 py-4">
+        <nav className="space-y-1.5 px-3 py-6">
           {navItems.map((item) => {
             const active = isNavActive(pathname, item.href);
             const Icon = item.icon;
@@ -71,33 +72,33 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "flex h-10 items-center gap-3 rounded-md px-3 text-sm text-slate-300 transition hover:bg-white/10 hover:text-white",
-                  active && "bg-white text-slate-950 hover:bg-white hover:text-slate-950",
+                  "group flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium text-slate-400 transition-all duration-200 hover:bg-white/10 hover:text-white",
+                  active && "bg-primary/10 text-primary hover:bg-primary/20 hover:text-primary shadow-sm",
                 )}
               >
-                <Icon className="h-4 w-4" />
+                <Icon className={cn("h-4 w-4 transition-transform group-hover:scale-110", active && "text-primary")} />
                 {item.label}
               </Link>
             );
           })}
         </nav>
-        <div className="absolute bottom-4 left-3 right-3 rounded-lg border border-white/10 bg-white/5 p-3">
-          <div className="flex items-center gap-2 text-sm font-medium">
-            <ShieldCheck className="h-4 w-4 text-teal-300" />
+        <div className="absolute bottom-4 left-3 right-3 rounded-xl border border-white/10 bg-white/5 p-4 shadow-soft backdrop-blur-md transition-transform hover:-translate-y-1 duration-300">
+          <div className="flex items-center gap-2 text-sm font-semibold text-slate-200">
+            <ShieldCheck className="h-4 w-4 text-primary" />
             Platform-owned routing
           </div>
-          <p className="mt-1 text-xs leading-5 text-slate-400">
+          <p className="mt-1.5 text-xs leading-relaxed text-slate-400">
             Inboxes, AI assistance, bot controls, campaigns, and live updates.
           </p>
         </div>
       </aside>
       <div className="lg:pl-64">
-        <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b bg-card/95 px-4 backdrop-blur lg:px-8">
+        <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-white/5 bg-background/60 px-4 backdrop-blur-xl lg:px-8">
           <div className="min-w-0">
-            <p className="truncate text-sm font-medium text-muted-foreground">
+            <p className="truncate text-xs font-semibold uppercase tracking-wider text-primary">
               AI-native conversation operations
             </p>
-            <h1 className="truncate text-lg font-semibold">
+            <h1 className="truncate text-xl font-bold tracking-tight text-slate-100">
               {navItems.find((item) => isNavActive(pathname, item.href))
                 ?.label ?? "Dashboard"}
             </h1>
@@ -105,25 +106,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-3">
             <Link
               href="/settings/agents"
-              className="hidden h-9 items-center gap-2 rounded-md border bg-card px-3 text-sm font-medium sm:flex"
+              className="hidden h-9 items-center gap-2 rounded-lg border border-white/10 bg-card/50 px-4 text-sm font-medium transition hover:bg-white/10 sm:flex"
             >
               <UsersRound className="h-4 w-4" />
               Team
             </Link>
             {session?.user && (
               <div className="flex items-center gap-2">
-                <div className="hidden items-center gap-2 rounded-md border bg-card px-3 py-2 text-sm sm:flex">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 text-xs font-semibold text-white">
+                <div className="hidden items-center gap-2 rounded-lg border border-white/10 bg-card/50 px-3 py-1.5 text-sm sm:flex">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/20 text-xs font-bold text-primary ring-1 ring-primary/50">
                     {initials(session.user.name ?? session.user.email ?? "?")}
                   </span>
-                  <span className="max-w-[160px] truncate">
+                  <span className="max-w-[160px] truncate font-medium text-slate-200">
                     {session.user.name ?? session.user.email}
                   </span>
                 </div>
                 <button
                   type="button"
                   onClick={() => signOut({ callbackUrl: "/signin" })}
-                  className="flex h-9 items-center gap-2 rounded-md border bg-card px-3 text-sm font-medium hover:bg-muted"
+                  className="flex h-9 items-center gap-2 rounded-lg border border-white/10 bg-card/50 px-3 text-sm font-medium transition hover:bg-destructive/20 hover:text-destructive hover:border-destructive/50"
                   title="Sign out"
                 >
                   <LogOut className="h-4 w-4" />
@@ -133,7 +134,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             )}
           </div>
         </header>
-        <nav className="flex gap-2 overflow-x-auto border-b bg-card px-4 py-2 lg:hidden">
+        <nav className="flex gap-2 overflow-x-auto border-b border-white/5 bg-background/60 backdrop-blur-xl px-4 py-3 lg:hidden scrollbar-thin">
           {navItems.map((item) => {
             const active = isNavActive(pathname, item.href);
             const Icon = item.icon;
@@ -142,8 +143,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "flex h-9 shrink-0 items-center gap-2 rounded-md border px-3 text-sm",
-                  active && "border-slate-900 bg-slate-900 text-white",
+                  "flex h-9 shrink-0 items-center gap-2 rounded-lg border border-white/10 px-4 text-sm font-medium transition-colors",
+                  active ? "border-primary bg-primary/10 text-primary" : "bg-card/50 text-slate-300 hover:bg-white/10",
                 )}
               >
                 <Icon className="h-4 w-4" />
@@ -152,7 +153,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             );
           })}
         </nav>
-        <main className="px-4 py-6 lg:px-8">{children}</main>
+        <main className="px-4 py-8 lg:px-8 animate-fade-in">{children}</main>
       </div>
     </div>
   );

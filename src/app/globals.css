@@ -2,30 +2,43 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: 210 20% 98%;
-  --foreground: 217 28% 12%;
-  --card: 0 0% 100%;
-  --card-foreground: 217 28% 12%;
-  --muted: 210 18% 93%;
-  --muted-foreground: 217 10% 43%;
-  --border: 214 16% 86%;
-  --input: 214 16% 86%;
-  --ring: 181 70% 34%;
-  --primary: 217 31% 17%;
-  --primary-foreground: 0 0% 100%;
-  --accent: 181 70% 34%;
-  --accent-foreground: 0 0% 100%;
-  --destructive: 0 72% 51%;
-  --destructive-foreground: 0 0% 100%;
-  --success: 153 60% 39%;
-  --warning: 34 92% 50%;
+@layer base {
+  :root {
+    --background: 240 10% 4%;
+    --foreground: 0 0% 98%;
+    --card: 240 10% 6%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 10% 6%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 260 100% 65%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 10% 12%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 10% 12%;
+    --muted-foreground: 240 5% 65%;
+    --accent: 260 100% 65%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 10% 15%;
+    --input: 240 10% 15%;
+    --ring: 260 100% 65%;
+    --success: 153 60% 45%;
+    --warning: 34 92% 60%;
+  }
 }
 
-body {
-  color: hsl(var(--foreground));
-  background: hsl(var(--background));
-  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  }
+  button, input, textarea, select {
+    font: inherit;
+  }
 }
 
 @layer utilities {
@@ -37,15 +50,16 @@ body {
     scrollbar-width: thin;
     scrollbar-color: hsl(var(--border)) transparent;
   }
-}
 
-* {
-  border-color: hsl(var(--border));
-}
-
-button,
-input,
-textarea,
-select {
-  font: inherit;
+  .glass {
+    @apply bg-card/60 backdrop-blur-xl border border-white/5 shadow-soft;
+  }
+  
+  .glass-panel {
+    @apply bg-black/40 backdrop-blur-md border border-white/5;
+  }
+  
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary to-purple-400;
+  }
 }
